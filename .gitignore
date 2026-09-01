@@ -1,0 +1,49 @@
+# Unreal Engine generated directories
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+
+# IDE generated files
+.vs/
+.idea/
+*.sln
+*.slnx
+*.suo
+*.opensdf
+*.opendb
+*.VC.db
+*.VC.VC.opendb
+
+# Generated developer plugins
+Plugins/Developer/RiderLink/
+Plugins/**/Binaries/
+Plugins/**/Intermediate/
+
+# Unreal binary assets are intentionally not versioned
+*.uasset
+*.umap
+*.ubulk
+*.uexp
+*.uptnl
+*.pak
+*.ucas
+*.utoc
+
+# Build and runtime binary outputs
+*.dll
+*.exe
+*.lib
+*.pdb
+*.exp
+
+# Local logs and temporary files
+*.log
+*.tmp
+*.temp
+*.user
+*.cache
+Thumbs.db
+Desktop.ini
+
+docs/AshenOath-plan/
