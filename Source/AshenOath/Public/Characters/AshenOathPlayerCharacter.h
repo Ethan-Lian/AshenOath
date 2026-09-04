@@ -8,6 +8,10 @@
 class UAshenOathAttributeSet;
 class UAbilitySystemComponent;
 class UGameplayEffect;
+class UCameraComponent;
+class USpringArmComponent;
+
+
 
 /**
  * Player-side GAS host.
@@ -27,6 +31,9 @@ public:
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 	
 	const UAshenOathAttributeSet* GetAttributeSet() const;
+	
+	// Convert 2D movement input from camera space into world-space movement directions, then pass it to CharacterMovement.
+	void RequestMove(const FVector2D& MovementIntent, float ReferenceYaw);
 
 protected:
 	virtual void EndPlay(
@@ -58,7 +65,13 @@ private:
 		Category = "AshenOath|AbilitySystem"
 	)
 	TSubclassOf<UGameplayEffect> InitialAttributesEffect;
+	
+	UPROPERTY(VisibleAnywhere, Category = "AshenOath|Camera")
+	TObjectPtr<USpringArmComponent> CameraBoom;
 
+	UPROPERTY(VisibleAnywhere, Category = "AshenOath|Camera")
+	TObjectPtr<UCameraComponent> FollowCamera;
+	
 	// PossessedBy may run again after repossession; initial stats are applied only once.
 	bool bInitialAttributesApplied = false;
 

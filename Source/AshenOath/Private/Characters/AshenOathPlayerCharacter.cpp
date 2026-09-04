@@ -2,9 +2,33 @@
 #include "AbilitySystem/AshenOathAttributeSet.h"
 #include "AbilitySystemComponent.h"
 #include "GameplayEffect.h"
+#include "Camera/CameraComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/SpringArmComponent.h"
+#include "GameplayTags/AshenOathGameplayTags.h"
+
 
 AAshenOathPlayerCharacter::AAshenOathPlayerCharacter()
 {
+	// Free movement separates body facing from view direction: CharacterMovement
+	// turns the body, while the boom reads ControlRotation and the camera follows its socket.
+	bUseControllerRotationPitch = false;
+	bUseControllerRotationYaw = false;
+	bUseControllerRotationRoll = false;
+
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+	Movement->bOrientRotationToMovement = true;
+	Movement->bUseControllerDesiredRotation = false;
+
+	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
+	CameraBoom->SetupAttachment(GetRootComponent());
+	CameraBoom->bUsePawnControlRotation = true;
+	CameraBoom->bDoCollisionTest = true;
+
+	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
+	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
+	FollowCamera->bUsePawnControlRotation = false;
+	
 	AbilitySystemComponent =
 		CreateDefaultSubobject<UAbilitySystemComponent>(
 			TEXT("AbilitySystemComponent")
@@ -53,6 +77,26 @@ const UAshenOathAttributeSet* AAshenOathPlayerCharacter::GetAttributeSet() const
 {
 	return AttributeSet;
 }
+
+void AAshenOathPlayerCharacter::RequestMove(const FVector2D& MovementIntent,float ReferenceYaw)
+{
+	if (!GetController() || IsActorBeingDestroyed() ||
+		AbilitySystemComponent->HasMatchingGameplayTag(AshenOathGameplayTags::State_Dead)) return;
+
+	// FRotator uses (Pitch, Yaw, Roll). Keeping only yaw gives a horizontal reference frame.
+	// GetUnitAxis returns its rotated local axes in world space: X is forward, Y is right.
+	const FRotator YawRotation(0.0f, ReferenceYaw, 0.0f);
+	const FVector ForwardDirection =
+		FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
+	const FVector RightDirection =
+		FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+
+	// Input uses X=right and Y=forward, so the axis pairing below is intentional.
+	// CharacterMovement consumes this intent and integrates time;
+	AddMovementInput(ForwardDirection, MovementIntent.Y);
+	AddMovementInput(RightDirection, MovementIntent.X);
+}
+
 
 
 void AAshenOathPlayerCharacter::ApplyInitialAttributes()

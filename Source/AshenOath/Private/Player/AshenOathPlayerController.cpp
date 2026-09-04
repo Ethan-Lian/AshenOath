@@ -1,0 +1,211 @@
+﻿#include "Player/AshenOathPlayerController.h"
+
+#include "Characters/AshenOathPlayerCharacter.h"
+#include "Engine/LocalPlayer.h"
+#include "EnhancedInputComponent.h"
+#include "EnhancedInputSubsystems.h"
+#include "EnhancedPlayerInput.h"
+#include "InputAction.h"
+#include "InputActionValue.h"
+#include "InputMappingContext.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogAshenOathPlayerInput, Log, All);
+
+void AAshenOathPlayerController::SetupInputComponent()
+{
+	// Super(父类) prepares the component; the Cast below checks its type without creating one.
+	Super::SetupInputComponent();
+
+	UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(InputComponent);
+
+	if (!EnhancedInput || !GameplayMappingContext || !MoveAction || !LookAction)
+	{
+		UE_LOG(
+			LogAshenOathPlayerInput,
+			Warning,
+			TEXT("%s: Check EnhancedInputComponent, GameplayMappingContext, MoveAction and LookAction."),
+			*GetName()
+		);
+		return;
+	}
+
+	if (MoveAction->ValueType != EInputActionValueType::Axis2D ||
+		LookAction->ValueType != EInputActionValueType::Axis2D)
+	{
+		UE_LOG(
+			LogAshenOathPlayerInput,
+			Warning,
+			TEXT("%s: MoveAction and LookAction must both use Axis2D."),
+			*GetName()
+		);
+		return;
+	}
+
+	if (BoundInputComponent.Get() != EnhancedInput)
+	{
+		// Bind callback function on this instance. 
+		EnhancedInput->BindAction(
+			MoveAction, ETriggerEvent::Triggered,
+			this, &AAshenOathPlayerController::HandleMove
+		);
+		EnhancedInput->BindAction(
+			LookAction, ETriggerEvent::Triggered,
+			this, &AAshenOathPlayerController::HandleLook
+		);
+		BoundInputComponent = EnhancedInput;
+	}
+
+	RefreshGameplayInputMapping();
+}
+
+
+// Super establishes(建立) the control relationship and calls Character::PossessedBy,
+// where GAS ActorInfo is refreshed. Check mappings after that relationship is ready.
+/* 
+     Controller : Super::OnPossess
+				↓
+	 Character::PossessedBy
+				↓
+	 InitAbilityActorInfo(this, this)
+				↓
+	Super finish control relationship
+				↓
+		return OnPossess
+				↓
+	RefreshGameplayInputMapping
+*/
+void AAshenOathPlayerController::OnPossess(APawn* InPawn)
+{
+	Super::OnPossess(InPawn);
+
+	RefreshGameplayInputMapping();
+
+	if (IsLocalController() && GetLocalPlayer() &&
+		Cast<AAshenOathPlayerCharacter>(GetPawn()))
+	{
+		SetInputMode(FInputModeGameOnly());
+		SetShowMouseCursor(false);
+	}
+}
+
+void AAshenOathPlayerController::OnUnPossess()
+{
+	RemoveGameplayInputMapping();
+	Super::OnUnPossess();
+}
+
+void AAshenOathPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	RemoveGameplayInputMapping();
+	Super::EndPlay(EndPlayReason);
+}
+
+void AAshenOathPlayerController::HandleMove(const FInputActionValue& Value)
+{
+	if (!IsLocalController() || IsMoveInputIgnored()) return;
+	
+	AAshenOathPlayerCharacter* PlayerCharacter = Cast<AAshenOathPlayerCharacter>(GetPawn());
+
+	if (IsValid(PlayerCharacter))
+	{
+		PlayerCharacter->RequestMove(
+			Value.Get<FVector2D>(),
+			GetControlRotation().Yaw
+		);
+	}
+}
+
+void AAshenOathPlayerController::HandleLook(const FInputActionValue& Value)
+{
+	if (!IsLocalController() || IsLookInputIgnored() ||
+		!IsValid(Cast<AAshenOathPlayerCharacter>(GetPawn()))) return;
+
+	const FVector2D LookInput = Value.Get<FVector2D>();
+	AddYawInput(LookInput.X);
+	AddPitchInput(LookInput.Y);
+}
+
+void AAshenOathPlayerController::RefreshGameplayInputMapping()
+{
+	// Input setup and possession can become ready separately. Both call this helper,
+	// which must leave one valid registration even when called more than once.
+	if (!IsLocalController() || !GetLocalPlayer() ||
+		!BoundInputComponent.IsValid() ||
+		BoundInputComponent.Get() != InputComponent.Get() ||
+		!IsValid(Cast<AAshenOathPlayerCharacter>(GetPawn())))
+	{
+		RemoveGameplayInputMapping();
+		return;
+	}
+
+	UEnhancedInputLocalPlayerSubsystem* Subsystem =
+		ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(
+			GetLocalPlayer()
+		);
+
+	UEnhancedPlayerInput* CurrentPlayerInput =
+		Subsystem ? Subsystem->GetPlayerInput() : nullptr;
+
+	if (!CurrentPlayerInput || !GameplayMappingContext)
+	{
+		RemoveGameplayInputMapping();
+		UE_LOG(
+			LogAshenOathPlayerInput,
+			Warning,
+			TEXT("%s: EnhancedPlayerInput or GameplayMappingContext is unavailable."),
+			*GetName()
+		);
+		return;
+	}
+
+	// Match our registration record as well as current presence. A context that
+	// exists without that record may belong to another system and must not be claimed.
+	if (RegisteredInputSubsystem.Get() == Subsystem &&
+		RegisteredPlayerInput.Get() == CurrentPlayerInput &&
+		RegisteredMappingContext.Get() == GameplayMappingContext.Get() &&
+		Subsystem->HasMappingContext(GameplayMappingContext.Get()))
+	{
+		return;
+	}
+
+	RemoveGameplayInputMapping();
+
+	if (Subsystem->HasMappingContext(GameplayMappingContext.Get()))
+	{
+		UE_LOG(
+			LogAshenOathPlayerInput,
+			Warning,
+			TEXT("%s: Gameplay mapping already exists; this controller will not take ownership."),
+			*GetName()
+		);
+		return;
+	}
+
+	Subsystem->AddMappingContext(GameplayMappingContext.Get(), 0);
+	RegisteredInputSubsystem = Subsystem;
+	RegisteredPlayerInput = CurrentPlayerInput;
+	RegisteredMappingContext = GameplayMappingContext.Get();
+}
+
+
+void AAshenOathPlayerController::RemoveGameplayInputMapping()
+{
+	UEnhancedInputLocalPlayerSubsystem* Subsystem = RegisteredInputSubsystem.Get();
+	UEnhancedPlayerInput* InstalledPlayerInput = RegisteredPlayerInput.Get();
+	UInputMappingContext* MappingContext = RegisteredMappingContext.Get();
+
+	// A LocalPlayer can outlive this controller and point at a different PlayerInput.
+	// Removing through that new input object would alter the next controller's mappings.
+	if (Subsystem && InstalledPlayerInput && MappingContext &&
+		Subsystem->GetPlayerInput() == InstalledPlayerInput)
+	{
+		Subsystem->RemoveMappingContext(MappingContext);
+	}
+
+	// Reset clears our references only. A later UnPossess/EndPlay cleanup becomes a no-op;
+	// the referenced objects still have their lifetimes managed by the engine.
+	RegisteredInputSubsystem.Reset();
+	RegisteredPlayerInput.Reset();
+	RegisteredMappingContext.Reset();
+}
+
