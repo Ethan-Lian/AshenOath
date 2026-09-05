@@ -2,21 +2,26 @@
 #include "AbilitySystemComponent.h"
 #include "AbilitySystem/AshenOathAttributeSet.h"
 #include "GameplayEffect.h"
-
+#include "Components/StateTreeComponent.h"
 
 AAshenOathBossCharacter::AAshenOathBossCharacter()
 {
-	AbilitySystemComponent =
-		CreateDefaultSubobject<UAbilitySystemComponent>(
+	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(
 			TEXT("AbilitySystemComponent")
 		);
 
 	AbilitySystemComponent->SetIsReplicated(false);
 
-	AttributeSet =
-		CreateDefaultSubobject<UAshenOathAttributeSet>(
+	AttributeSet = CreateDefaultSubobject<UAshenOathAttributeSet>(
 			TEXT("AttributeSet")
 		);
+	
+	StateTreeComponent = CreateDefaultSubobject<UStateTreeComponent>(
+			TEXT("StateTreeComponent")
+		);
+	
+	// GAS is initialized by the owning character before the tree starts.
+	StateTreeComponent->SetStartLogicAutomatically(false);
 }
 
 void AAshenOathBossCharacter::BeginPlay()
@@ -25,10 +30,13 @@ void AAshenOathBossCharacter::BeginPlay()
 	
 	check(AbilitySystemComponent);
 	check(AttributeSet);
+	check(StateTreeComponent);
 
 	// AI has no controller-dependent initialization, so BeginPlay is its GAS boundary.
 	AbilitySystemComponent->InitAbilityActorInfo(this, this);
 	ApplyInitialAttributes();
+	
+	StateTreeComponent->StartLogic();
 }
 
 void AAshenOathBossCharacter::ApplyInitialAttributes()
@@ -63,6 +71,13 @@ void AAshenOathBossCharacter::ApplyInitialAttributes()
 
 void AAshenOathBossCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	
+	if (StateTreeComponent)
+	{
+		// ExitState may still need the ASC, so stop the tree first.
+		StateTreeComponent->StopLogic(TEXT("Boss EndPlay"));
+	}
+	
 	if (AbilitySystemComponent)
 	{
 		// Drop ActorInfo's world references before the actor and its components disappear.

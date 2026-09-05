@@ -8,6 +8,7 @@
 class UAshenOathAttributeSet;
 class UAbilitySystemComponent;
 class UGameplayEffect;
+class UStateTreeComponent;
 
 /**
  * AI-side GAS host.
@@ -57,4 +58,12 @@ private:
 		Category = "AshenOath|AbilitySystem"
 	)
 	TObjectPtr<UAshenOathAttributeSet> AttributeSet;
+	
+	UPROPERTY(
+	VisibleAnywhere,
+	BlueprintReadOnly,
+	Category = "AshenOath|AI",
+	meta = (AllowPrivateAccess = "true")
+	)
+	TObjectPtr<UStateTreeComponent> StateTreeComponent;
 };
