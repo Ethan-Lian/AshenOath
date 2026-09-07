@@ -20,15 +20,14 @@ struct FInputActionValue;
 	      ↓
   PlayerController
 	├── Register Mapping Context
-	├── Bind Move / Look InputAction
-	├── HandleMove()
-	└── HandleLook()
+	├── Bind InputAction
+	├── HandleFunction
 			↓
 	Current Possess Pawn/Character
 			↓
-	RequestMove / RequestLook
+	RequestFunction
 			↓
-	CharacterMovement / Camera
+	CharacterMovement / Camera / CombatActionComponent
  */
 UCLASS()
 class ASHENOATH_API AAshenOathPlayerController : public APlayerController
@@ -54,6 +53,9 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Input")
 	TObjectPtr<UInputAction> LookAction;
 
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Input")
+	TObjectPtr<UInputAction> LightAttackAction;
+
 	// Bind once per inputcomponent; possession can change independently.
 	TWeakObjectPtr<UEnhancedInputComponent> BoundInputComponent;
 
@@ -67,7 +69,8 @@ private:
 	// Invoked by Enhanced Input through the bindings made in SetupInputComponent.
 	void HandleMove(const FInputActionValue& Value);
 	void HandleLook(const FInputActionValue& Value);
-	
+	void HandleLightAttack();
+
 	// Shared helpers must tolerate repeated calls from different lifecycle paths.
 	void RefreshGameplayInputMapping();
 	void RemoveGameplayInputMapping();

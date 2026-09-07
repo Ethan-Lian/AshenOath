@@ -10,6 +10,8 @@ class UAbilitySystemComponent;
 class UGameplayEffect;
 class UCameraComponent;
 class USpringArmComponent;
+class UCombatActionComponent;
+class UCombatActionData;
 
 
 
@@ -35,6 +37,8 @@ public:
 	// Convert 2D movement input from camera space into world-space movement directions, then pass it to CharacterMovement.
 	void RequestMove(const FVector2D& MovementIntent, float ReferenceYaw);
 
+	// !!!!! 链路:controller -> character -> combatcomponent -> animinstance.
+	void RequestLightAttack();
 protected:
 	virtual void EndPlay(
 		const EEndPlayReason::Type EndPlayReason
@@ -58,6 +62,20 @@ private:
 		Category = "AshenOath|AbilitySystem"
 	)
 	TObjectPtr<UAshenOathAttributeSet> AttributeSet;
+
+	UPROPERTY(
+		VisibleAnywhere,
+		BlueprintReadOnly,
+		Category = "AshenOath|Combat",
+		meta = (AllowPrivateAccess = "true")
+	)
+	TObjectPtr<UCombatActionComponent> CombatActionComponent;
+
+	UPROPERTY(
+	EditDefaultsOnly,
+	Category = "AshenOath|Combat"
+	)
+	TObjectPtr<UCombatActionData> LightAttackAction;
 	
 	// TSubclassOf exposes a GameplayEffect class asset, not a mutable effect instance.
 	UPROPERTY(

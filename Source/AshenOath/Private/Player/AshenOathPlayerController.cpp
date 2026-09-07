@@ -18,24 +18,25 @@ void AAshenOathPlayerController::SetupInputComponent()
 
 	UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(InputComponent);
 
-	if (!EnhancedInput || !GameplayMappingContext || !MoveAction || !LookAction)
+	if (!EnhancedInput || !GameplayMappingContext || !MoveAction || !LookAction || !LightAttackAction)
 	{
 		UE_LOG(
 			LogAshenOathPlayerInput,
 			Warning,
-			TEXT("%s: Check EnhancedInputComponent, GameplayMappingContext, MoveAction and LookAction."),
+			TEXT("%s: Check EnhancedInputComponent, GameplayMappingContext, MoveAction, LookAction and LightAttackAction."),
 			*GetName()
 		);
 		return;
 	}
 
 	if (MoveAction->ValueType != EInputActionValueType::Axis2D ||
-		LookAction->ValueType != EInputActionValueType::Axis2D)
+		LookAction->ValueType != EInputActionValueType::Axis2D ||
+		LightAttackAction->ValueType != EInputActionValueType::Boolean)
 	{
 		UE_LOG(
 			LogAshenOathPlayerInput,
 			Warning,
-			TEXT("%s: MoveAction and LookAction must both use Axis2D."),
+			TEXT("%s: MoveAction and LookAction must use Axis2D; LightAttackAction must use Boolean."),
 			*GetName()
 		);
 		return;
@@ -51,6 +52,10 @@ void AAshenOathPlayerController::SetupInputComponent()
 		EnhancedInput->BindAction(
 			LookAction, ETriggerEvent::Triggered,
 			this, &AAshenOathPlayerController::HandleLook
+		);
+		EnhancedInput->BindAction(
+			LightAttackAction,ETriggerEvent::Started,
+			this, &AAshenOathPlayerController::HandleLightAttack
 		);
 		BoundInputComponent = EnhancedInput;
 	}
@@ -207,5 +212,21 @@ void AAshenOathPlayerController::RemoveGameplayInputMapping()
 	RegisteredInputSubsystem.Reset();
 	RegisteredPlayerInput.Reset();
 	RegisteredMappingContext.Reset();
+}
+
+void AAshenOathPlayerController::HandleLightAttack()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	AAshenOathPlayerCharacter* PlayerCharacter =
+		Cast<AAshenOathPlayerCharacter>(GetPawn());
+
+	if (IsValid(PlayerCharacter))
+	{
+		PlayerCharacter->RequestLightAttack();
+	}
 }
 

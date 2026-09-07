@@ -15,7 +15,8 @@ public class AshenOath : ModuleRules
 				"InputCore",
 				"EnhancedInput",
 				"GameplayAbilities",
-				"GameplayTags"
+				"GameplayTags",
+				"AshenOathCombat"
 			}
 		);
 

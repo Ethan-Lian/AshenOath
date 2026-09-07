@@ -6,6 +6,8 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameplayTags/AshenOathGameplayTags.h"
+#include "Actions/CombatActionComponent.h"
+#include "Actions/CombatActionData.h"
 
 
 AAshenOathPlayerCharacter::AAshenOathPlayerCharacter()
@@ -29,6 +31,11 @@ AAshenOathPlayerCharacter::AAshenOathPlayerCharacter()
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
 	
+	CombatActionComponent =
+	CreateDefaultSubobject<UCombatActionComponent>(
+		TEXT("CombatActionComponent")
+	);
+
 	AbilitySystemComponent =
 		CreateDefaultSubobject<UAbilitySystemComponent>(
 			TEXT("AbilitySystemComponent")
@@ -126,9 +133,7 @@ void AAshenOathPlayerCharacter::ApplyInitialAttributes()
 	}
 
 	const FActiveGameplayEffectHandle AppliedHandle =
-		AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(
-			*EffectSpec.Data.Get()
-		);
+		AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*EffectSpec.Data.Get());
 
 	if (AppliedHandle.WasSuccessfullyApplied())
 	{
@@ -136,7 +141,18 @@ void AAshenOathPlayerCharacter::ApplyInitialAttributes()
 	}
 }
 
+void AAshenOathPlayerCharacter::RequestLightAttack()
+{
+	if (!GetController() || IsActorBeingDestroyed() ||
+		AbilitySystemComponent->HasMatchingGameplayTag(AshenOathGameplayTags::State_Dead))
+	{
+		return;
+	}
 
+	FCombatActionHandle ActionHandle;
 
-
-
+	CombatActionComponent->TryStartAction(
+		LightAttackAction,
+		ActionHandle
+	);
+}
