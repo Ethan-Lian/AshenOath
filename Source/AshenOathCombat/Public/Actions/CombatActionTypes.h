@@ -18,17 +18,20 @@ enum class ECombatActionStartResult : uint8
 };
 
 /**
- * Identifies one execution of an action rather than an action type.
+ * Stable identity for one specific execution of a combat action.
  *
- * Each successful execution receives a different value, allowing delayed
- * callbacks from an older execution to be rejected safely.
- * Zero is reserved as the invalid value.
+ * It identifies an action instance, not an action type. Each successful
+ * execution receives a unique value, so callbacks and asynchronous events
+ * can verify that they still belong to the currently active execution.
+ *
+ * Zero is reserved as the invalid identity.
  */
 USTRUCT(BlueprintType)
 struct ASHENOATHCOMBAT_API FCombatActionHandle
 {
     GENERATED_BODY()
 
+    // Unique identity of one combat action execution
     UPROPERTY(BlueprintReadOnly, Category = "Combat Action")
 	int32 Value = 0;
 

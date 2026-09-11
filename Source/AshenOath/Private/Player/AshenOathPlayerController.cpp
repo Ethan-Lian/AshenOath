@@ -9,8 +9,6 @@
 #include "InputActionValue.h"
 #include "InputMappingContext.h"
 
-DEFINE_LOG_CATEGORY_STATIC(LogAshenOathPlayerInput, Log, All);
-
 void AAshenOathPlayerController::SetupInputComponent()
 {
 	// Super(父类) prepares the component; the Cast below checks its type without creating one.
@@ -20,12 +18,6 @@ void AAshenOathPlayerController::SetupInputComponent()
 
 	if (!EnhancedInput || !GameplayMappingContext || !MoveAction || !LookAction || !LightAttackAction)
 	{
-		UE_LOG(
-			LogAshenOathPlayerInput,
-			Warning,
-			TEXT("%s: Check EnhancedInputComponent, GameplayMappingContext, MoveAction, LookAction and LightAttackAction."),
-			*GetName()
-		);
 		return;
 	}
 
@@ -33,12 +25,6 @@ void AAshenOathPlayerController::SetupInputComponent()
 		LookAction->ValueType != EInputActionValueType::Axis2D ||
 		LightAttackAction->ValueType != EInputActionValueType::Boolean)
 	{
-		UE_LOG(
-			LogAshenOathPlayerInput,
-			Warning,
-			TEXT("%s: MoveAction and LookAction must use Axis2D; LightAttackAction must use Boolean."),
-			*GetName()
-		);
 		return;
 	}
 
@@ -153,13 +139,6 @@ void AAshenOathPlayerController::RefreshGameplayInputMapping()
 
 	if (!CurrentPlayerInput || !GameplayMappingContext)
 	{
-		RemoveGameplayInputMapping();
-		UE_LOG(
-			LogAshenOathPlayerInput,
-			Warning,
-			TEXT("%s: EnhancedPlayerInput or GameplayMappingContext is unavailable."),
-			*GetName()
-		);
 		return;
 	}
 
@@ -177,12 +156,6 @@ void AAshenOathPlayerController::RefreshGameplayInputMapping()
 
 	if (Subsystem->HasMappingContext(GameplayMappingContext.Get()))
 	{
-		UE_LOG(
-			LogAshenOathPlayerInput,
-			Warning,
-			TEXT("%s: Gameplay mapping already exists; this controller will not take ownership."),
-			*GetName()
-		);
 		return;
 	}
 
@@ -221,8 +194,7 @@ void AAshenOathPlayerController::HandleLightAttack()
 		return;
 	}
 
-	AAshenOathPlayerCharacter* PlayerCharacter =
-		Cast<AAshenOathPlayerCharacter>(GetPawn());
+	AAshenOathPlayerCharacter* PlayerCharacter = Cast<AAshenOathPlayerCharacter>(GetPawn());
 
 	if (IsValid(PlayerCharacter))
 	{

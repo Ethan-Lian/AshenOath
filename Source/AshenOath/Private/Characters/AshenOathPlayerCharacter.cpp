@@ -31,22 +31,13 @@ AAshenOathPlayerCharacter::AAshenOathPlayerCharacter()
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
 	
-	CombatActionComponent =
-	CreateDefaultSubobject<UCombatActionComponent>(
-		TEXT("CombatActionComponent")
-	);
+	CombatActionComponent = CreateDefaultSubobject<UCombatActionComponent>(TEXT("CombatActionComponent"));
 
-	AbilitySystemComponent =
-		CreateDefaultSubobject<UAbilitySystemComponent>(
-			TEXT("AbilitySystemComponent")
-		);
+	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 
 	AbilitySystemComponent->SetIsReplicated(false);
 
-	AttributeSet =
-		CreateDefaultSubobject<UAshenOathAttributeSet>(
-			TEXT("AttributeSet")
-		);
+	AttributeSet = CreateDefaultSubobject<UAshenOathAttributeSet>(TEXT("AttributeSet"));
 }
 
 void AAshenOathPlayerCharacter::PossessedBy(AController* NewController)
@@ -93,18 +84,13 @@ void AAshenOathPlayerCharacter::RequestMove(const FVector2D& MovementIntent,floa
 	// FRotator uses (Pitch, Yaw, Roll). Keeping only yaw gives a horizontal reference frame.
 	// GetUnitAxis returns its rotated local axes in world space: X is forward, Y is right.
 	const FRotator YawRotation(0.0f, ReferenceYaw, 0.0f);
-	const FVector ForwardDirection =
-		FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
-	const FVector RightDirection =
-		FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+	const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
+	const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
 
 	// Input uses X=right and Y=forward, so the axis pairing below is intentional.
-	// CharacterMovement consumes this intent and integrates time;
 	AddMovementInput(ForwardDirection, MovementIntent.Y);
 	AddMovementInput(RightDirection, MovementIntent.X);
 }
-
-
 
 void AAshenOathPlayerCharacter::ApplyInitialAttributes()
 {
@@ -151,8 +137,5 @@ void AAshenOathPlayerCharacter::RequestLightAttack()
 
 	FCombatActionHandle ActionHandle;
 
-	CombatActionComponent->TryStartAction(
-		LightAttackAction,
-		ActionHandle
-	);
+	CombatActionComponent->TryStartAction(LightAttackAction,ActionHandle);
 }
