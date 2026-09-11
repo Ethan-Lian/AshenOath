@@ -8,6 +8,7 @@
 #include "GameplayTags/AshenOathGameplayTags.h"
 #include "Actions/CombatActionComponent.h"
 #include "Actions/CombatActionData.h"
+#include "Actions/CombatMeleeComponent.h"
 
 
 AAshenOathPlayerCharacter::AAshenOathPlayerCharacter()
@@ -32,6 +33,7 @@ AAshenOathPlayerCharacter::AAshenOathPlayerCharacter()
 	FollowCamera->bUsePawnControlRotation = false;
 	
 	CombatActionComponent = CreateDefaultSubobject<UCombatActionComponent>(TEXT("CombatActionComponent"));
+	CombatMeleeComponent = CreateDefaultSubobject<UCombatMeleeComponent>(TEXT("CombatMeleeComponent"));
 
 	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 

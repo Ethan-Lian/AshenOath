@@ -10,8 +10,9 @@ class UAnimMontage;
 /**
  * Read-only configuration shared by every execution of an action.
  *
- * Runtime state such as the active Montage and execution handle belongs to
- * UCombatActionComponent rather than this Data Asset.
+ * Runtime state belongs to the components executing this configuration rather
+ * than this Data Asset. UCombatActionComponent owns the action and Montage;
+ * UCombatMeleeComponent owns the active melee snapshot and hit-window state.
  */
 
 UCLASS(BlueprintType)
@@ -28,6 +29,9 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat Action")
 	FName StartSection = NAME_None;
+
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "Combat Action|Cost")
+	TSubclassOf<UGameplayEffect> CostEffect;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat Action|Damage")
 	TSubclassOf<UGameplayEffect> DamageEffect;

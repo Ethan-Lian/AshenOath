@@ -1,15 +1,11 @@
 #include "Actions/CombatActionComponent.h"
 
 #include "Actions/CombatActionData.h"
+#include "Actions/CombatMeleeComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
-#include "CollisionQueryParams.h"
 #include "Components/SkeletalMeshComponent.h"
-#include "Damage/CombatDamageComponent.h"
-#include "Damage/CombatDamageTypes.h"
-#include "Engine/World.h"
 #include "GameFramework/Character.h"
-#include "GameplayEffect.h"
 
 UCombatActionComponent::UCombatActionComponent()
 {
@@ -20,23 +16,30 @@ void UCombatActionComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
-	CachedCharacter = Cast<ACharacter>(GetOwner());
+	ACharacter* Character = Cast<ACharacter>(GetOwner());
+	CachedCharacter = Character;
+
+	if (IsValid(Character))
+	{
+		MeleeComponent = Character->FindComponentByClass<UCombatMeleeComponent>();
+	}
 }
 
 void UCombatActionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	CancelCurrentAction(0.0f);
+	MeleeComponent.Reset();
 	CachedCharacter.Reset();
+
 	Super::EndPlay(EndPlayReason);
 }
 
 ECombatActionStartResult UCombatActionComponent::TryStartAction(const UCombatActionData* ActionData,
-                                                                FCombatActionHandle& OutHandle)
+	                                                            FCombatActionHandle& OutHandle)
 {
 	// OutHandle belongs to the caller and may contain a handle from an earlier request.
 	// Reset it first so a rejected request always returns an invalid handle.
 	// A successful request will replace it with the new action handle.
-
 	OutHandle.Reset();
 
 	if (CurrentAction.IsValid())
@@ -63,14 +66,13 @@ ECombatActionStartResult UCombatActionComponent::TryStartAction(const UCombatAct
 	}
 
 	USkeletalMeshComponent* MeshComponent = Character->GetMesh();
-
 	UAnimInstance* AnimInstance = MeshComponent ? MeshComponent->GetAnimInstance() : nullptr;
 
 	if (!AnimInstance)
 	{
 		return ECombatActionStartResult::RejectedInvalidAnimation;
 	}
-	
+
 	const float PlayedDuration = AnimInstance->Montage_Play(ActionData->Montage, ActionData->PlayRate);
 
 	if (PlayedDuration <= 0.0f)
@@ -79,13 +81,16 @@ ECombatActionStartResult UCombatActionComponent::TryStartAction(const UCombatAct
 	}
 
 	CurrentAction.Value = AllocateActionInstanceId();
-
 	ActiveAnimInstance = AnimInstance;
 	ActiveMontage = ActionData->Montage;
-	ActiveDamageEffect = ActionData->DamageEffect;
-	ActiveMeleeTraceRadius = FMath::Max(ActionData->MeleeTraceRadius, 0.0f);
-	ActiveMeleeTraceBones = ActionData->MeleeTraceBones;
-	bActiveDamageCanTriggerPerfectDodge = ActionData->bCanTriggerPerfectDodge;
+
+	// The action owns the execution handle. Melee receives a value snapshot so
+	// hit detection never depends on mutable shared Data Asset state mid-action.
+	if (UCombatMeleeComponent* Melee = MeleeComponent.Get())
+	{
+		Melee->BeginAction(CurrentAction, ActionData->DamageEffect, ActionData->MeleeTraceRadius,
+		                   ActionData->MeleeTraceBones, ActionData->bCanTriggerPerfectDodge);
+	}
 
 	if (!ActionData->StartSection.IsNone())
 	{
@@ -146,8 +151,12 @@ void UCombatActionComponent::FinishAction(int32 ExpectedActionId, bool bStopMont
 	UAnimInstance* AnimInstance = ActiveAnimInstance.Get();
 	UAnimMontage* AnimMontage = ActiveMontage.Get();
 
-	ResetMeleeHitWindow();
-	ResetActiveActionDamageData();
+	// End dependent action-scoped state while the handle is still valid. The
+	// melee component rejects stale cleanup requests using the same handle.
+	if (UCombatMeleeComponent* Melee = MeleeComponent.Get())
+	{
+		Melee->EndAction(CurrentAction);
+	}
 
 	// Clear the component's action state before calling animation functions.
 	// Stopping a Montage may trigger callbacks that re-enter this component.
@@ -172,205 +181,33 @@ void UCombatActionComponent::FinishAction(int32 ExpectedActionId, bool bStopMont
 	}
 }
 
-void UCombatActionComponent::ResetActiveActionDamageData()
-{
-	ActiveDamageEffect = nullptr;
-	ActiveMeleeTraceRadius = 0.0f;
-	ActiveMeleeTraceBones.Reset();
-	bActiveDamageCanTriggerPerfectDodge = false;
-}
-
 void UCombatActionComponent::BeginMeleeHitWindow(int32 NotifyInstanceId, int32 DamageSegmentId)
 {
-	if (!CurrentAction.IsValid() || DamageSegmentId <= 0)
+	if (UCombatMeleeComponent* Melee = MeleeComponent.Get())
 	{
-		return;
+		Melee->BeginHitWindow(CurrentAction, NotifyInstanceId, DamageSegmentId);
 	}
-
-	if (IsMeleeHitWindowActive())
-	{
-		return;
-	}
-
-	ACharacter* Character = CachedCharacter.Get();
-	USkeletalMeshComponent* MeshComponent = Character ? Character->GetMesh() : nullptr;
-
-	if (!IsValid(MeshComponent) || !ActiveDamageEffect || ActiveMeleeTraceRadius <= 0.0f ||
-	    ActiveMeleeTraceBones.Num() < 2)
-	{
-		return;
-	}
-
-	PreviousMeleeTraceLocations.SetNumUninitialized(ActiveMeleeTraceBones.Num());
-
-	for (int32 Index = 0; Index < ActiveMeleeTraceBones.Num(); ++Index)
-	{
-		const FName TracePointName = ActiveMeleeTraceBones[Index];
-
-		if (!MeshComponent->DoesSocketExist(TracePointName))
-		{
-			ResetMeleeHitWindow();
-			return;
-		}
-
-		PreviousMeleeTraceLocations[Index] = MeshComponent->GetSocketLocation(TracePointName);
-	}
-
-	ActiveHitWindowActionInstanceId = CurrentAction.Value;
-	ActiveHitWindowNotifyInstanceId = NotifyInstanceId;
-	ActiveDamageSegmentId = DamageSegmentId;
-	HitActorsInCurrentWindow.Reset();
 }
 
 void UCombatActionComponent::EndMeleeHitWindow(int32 NotifyInstanceId)
 {
-	if (!CurrentAction.IsValid() || ActiveHitWindowActionInstanceId != CurrentAction.Value ||
-	    ActiveHitWindowNotifyInstanceId != NotifyInstanceId)
+	if (UCombatMeleeComponent* Melee = MeleeComponent.Get())
 	{
-		return;
+		Melee->EndHitWindow(CurrentAction, NotifyInstanceId);
 	}
-
-	ResetMeleeHitWindow();
 }
 
-void UCombatActionComponent::TickMeleeHitWindow()
+void UCombatActionComponent::TickMeleeHitWindow(const int32 NotifyInstanceId)
 {
-	if (!IsMeleeHitWindowActive())
+	if (UCombatMeleeComponent* Melee = MeleeComponent.Get())
 	{
-		return;
+		Melee->TickHitWindow(CurrentAction, NotifyInstanceId);
 	}
-
-	ACharacter* Character = CachedCharacter.Get();
-	USkeletalMeshComponent* MeshComponent = Character ? Character->GetMesh() : nullptr;
-
-	if (!IsValid(MeshComponent) || PreviousMeleeTraceLocations.Num() != ActiveMeleeTraceBones.Num())
-	{
-		ResetMeleeHitWindow();
-		return;
-	}
-
-	TArray<FVector> CurrentTraceLocations;
-	CurrentTraceLocations.SetNumUninitialized(ActiveMeleeTraceBones.Num());
-
-	for (int32 Index = 0; Index < ActiveMeleeTraceBones.Num(); ++Index)
-	{
-		const FName TracePointName = ActiveMeleeTraceBones[Index];
-
-		if (!MeshComponent->DoesSocketExist(TracePointName))
-		{
-			ResetMeleeHitWindow();
-			return;
-		}
-
-		CurrentTraceLocations[Index] = MeshComponent->GetSocketLocation(TracePointName);
-	}
-
-	// Sweep every sample point from its previous position to its current one.
-	for (int32 Index = 0; Index < CurrentTraceLocations.Num(); ++Index)
-	{
-		SweepMeleeSegment(PreviousMeleeTraceLocations[Index], CurrentTraceLocations[Index]);
-
-		if (!IsMeleeHitWindowActive())
-		{
-			return;
-		}
-	}
-
-	// Sweep between adjacent trace points at the weapon's current pose.
-	// This fills the gaps between individual trace points so the weapon body
-	// can hit targets, not just the sampled sockets/bones.
-	for (int32 Index = 1; Index < CurrentTraceLocations.Num(); ++Index)
-	{
-		SweepMeleeSegment(CurrentTraceLocations[Index - 1], CurrentTraceLocations[Index]);
-
-		if (!IsMeleeHitWindowActive())
-		{
-			return;
-		}
-	}
-
-	PreviousMeleeTraceLocations = MoveTemp(CurrentTraceLocations);
 }
 
 bool UCombatActionComponent::IsMeleeHitWindowActive() const
 {
-	return CurrentAction.IsValid() && ActiveHitWindowActionInstanceId == CurrentAction.Value;
-}
+	const UCombatMeleeComponent* Melee = MeleeComponent.Get();
 
-void UCombatActionComponent::ResetMeleeHitWindow()
-{
-	ActiveHitWindowActionInstanceId = 0;
-	ActiveDamageSegmentId = 0;
-	ActiveHitWindowNotifyInstanceId = INDEX_NONE;
-
-	PreviousMeleeTraceLocations.Reset();
-	HitActorsInCurrentWindow.Reset();
-}
-
-void UCombatActionComponent::SweepMeleeSegment(const FVector& Start, const FVector& End)
-{
-	ACharacter* Character = CachedCharacter.Get();
-	UWorld* World = GetWorld();
-
-	if (!IsValid(Character) || !World || !IsMeleeHitWindowActive())
-	{
-		return;
-	}
-
-	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(AshenOathMeleeSweep), false, Character);
-
-	const FCollisionObjectQueryParams ObjectQueryParams(ECC_Pawn);
-
-	TArray<FHitResult> HitResults;
-
-	World->SweepMultiByObjectType(HitResults, Start, End, FQuat::Identity, ObjectQueryParams,
-	                              FCollisionShape::MakeSphere(ActiveMeleeTraceRadius), QueryParams);
-
-	for (const FHitResult& HitResult : HitResults)
-	{
-		if (!IsMeleeHitWindowActive())
-		{
-			return;
-		}
-
-		SubmitMeleeHit(HitResult.GetActor());
-	}
-}
-
-void UCombatActionComponent::SubmitMeleeHit(AActor* HitActor)
-{
-	ACharacter* Character = CachedCharacter.Get();
-
-	if (!IsMeleeHitWindowActive() || !IsValid(Character) || !IsValid(HitActor) || HitActor == Character)
-	{
-		return;
-	}
-
-	const TWeakObjectPtr<AActor> HitActorKey(HitActor);
-
-	if (HitActorsInCurrentWindow.Contains(HitActorKey))
-	{
-		return;
-	}
-
-	UCombatDamageComponent* DamageComponent = HitActor->FindComponentByClass<UCombatDamageComponent>();
-
-	if (!DamageComponent)
-	{
-		return;
-	}
-
-	// Register before applying the effect because GAS callbacks are synchronous
-	// and may re-enter combat code.
-	HitActorsInCurrentWindow.Add(HitActorKey);
-
-	FCombatDamageAttempt DamageAttempt;
-	DamageAttempt.SourceActor = Character;
-	DamageAttempt.DamageEffect = ActiveDamageEffect;
-	DamageAttempt.AttackInstanceId = ActiveHitWindowActionInstanceId;
-	DamageAttempt.HitId = ActiveDamageSegmentId;
-	DamageAttempt.HitTimeSeconds = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
-	DamageAttempt.bCanTriggerPerfectDodge = bActiveDamageCanTriggerPerfectDodge;
-
-	DamageComponent->ApplyDamageAttempt(DamageAttempt);
+	return Melee && Melee->IsHitWindowActive(CurrentAction);
 }

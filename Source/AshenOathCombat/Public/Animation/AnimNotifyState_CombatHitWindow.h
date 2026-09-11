@@ -12,7 +12,8 @@ class UCombatActionComponent;
  *
  * This notify state does not own runtime combat state. Notify assets may be
  * reused or executed multiple times, so hit tracking and window state remain
- * owned by UCombatActionComponent.
+ * owned by UCombatMeleeComponent. Calls are routed through
+ * UCombatActionComponent to preserve the current action boundary.
  *
  * NotifyBegin opens the window, NotifyTick advances melee tracing, and
  * NotifyEnd closes the exact notify instance that opened it.

@@ -34,7 +34,7 @@ void UAnimNotifyState_CombatHitWindow::NotifyTick(USkeletalMeshComponent* MeshCo
 {
 	if (UCombatActionComponent* CombatActionComponent = ResolveCombatActionComponent(MeshComp))
 	{
-		CombatActionComponent->TickMeleeHitWindow();
+		CombatActionComponent->TickMeleeHitWindow(EventReference.GetNotifyInstanceID());
 	}
 
 	Super::NotifyTick(MeshComp, Animation, FrameDeltaTime, EventReference);

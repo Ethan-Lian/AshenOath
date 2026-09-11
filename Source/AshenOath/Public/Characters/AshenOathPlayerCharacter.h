@@ -12,6 +12,7 @@ class UCameraComponent;
 class USpringArmComponent;
 class UCombatActionComponent;
 class UCombatActionData;
+class UCombatMeleeComponent;
 
 
 /**
@@ -60,6 +61,11 @@ private:
 	// Executes character combat actions and owns their runtime action state.
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category = "AshenOath|Combat",meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UCombatActionComponent> CombatActionComponent;
+
+	// Owns weapon tracing, hit-window state, and per-window hit deduplication.
+	// CombatActionComponent starts and ends its state with each action execution.
+	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category = "AshenOath|Combat",meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UCombatMeleeComponent> CombatMeleeComponent;
 
 	// Data definition used when requesting the player's light attack.
 	UPROPERTY(EditDefaultsOnly,Category = "AshenOath|Combat")
