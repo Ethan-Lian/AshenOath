@@ -1,11 +1,16 @@
 ﻿#include "Characters/AshenOathPlayerCharacter.h"
 #include "AbilitySystem/AshenOathAttributeSet.h"
+#include "AbilitySystem/AshenOathStaminaRegenerationEffect.h"
 #include "AbilitySystemComponent.h"
 #include "GameplayEffect.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameplayTags/AshenOathGameplayTags.h"
+#include "Actions/CombatActionComponent.h"
+#include "Actions/CombatActionData.h"
+#include "Actions/CombatMeleeComponent.h"
+#include "Damage/CombatDamageComponent.h"
 
 
 AAshenOathPlayerCharacter::AAshenOathPlayerCharacter()
@@ -29,17 +34,40 @@ AAshenOathPlayerCharacter::AAshenOathPlayerCharacter()
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
 	
-	AbilitySystemComponent =
-		CreateDefaultSubobject<UAbilitySystemComponent>(
-			TEXT("AbilitySystemComponent")
-		);
+	CombatActionComponent = CreateDefaultSubobject<UCombatActionComponent>(TEXT("CombatActionComponent"));
+	CombatMeleeComponent = CreateDefaultSubobject<UCombatMeleeComponent>(TEXT("CombatMeleeComponent"));
+	CombatDamageComponent = CreateDefaultSubobject<UCombatDamageComponent>(TEXT("CombatDamageComponent"));
+
+	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 
 	AbilitySystemComponent->SetIsReplicated(false);
 
-	AttributeSet =
-		CreateDefaultSubobject<UAshenOathAttributeSet>(
-			TEXT("AttributeSet")
-		);
+	AttributeSet = CreateDefaultSubobject<UAshenOathAttributeSet>(TEXT("AttributeSet"));
+
+	StaminaRecoveryEffect = UAshenOathStaminaRegenerationEffect::StaticClass();
+}
+
+void AAshenOathPlayerCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+
+	if (AbilitySystemComponent)
+	{
+		DeadStateChangedHandle = AbilitySystemComponent->RegisterGameplayTagEvent(
+			AshenOathGameplayTags::State_Dead,
+			EGameplayTagEventType::NewOrRemoved
+		).AddUObject(this, &AAshenOathPlayerCharacter::HandleDeadStateChanged);
+	}
+
+	if (CombatActionComponent)
+	{
+		CombatActionComponent->ConfigureResourceRecovery(StaminaRecoveryEffect, StaminaRecoveryDelay);
+	}
+
+	if (CombatDamageComponent)
+	{
+		CombatDamageComponent->ConfigureInvulnerabilityTag(AshenOathGameplayTags::State_Invulnerable);
+	}
 }
 
 void AAshenOathPlayerCharacter::PossessedBy(AController* NewController)
@@ -59,6 +87,21 @@ void AAshenOathPlayerCharacter::PossessedBy(AController* NewController)
 
 void AAshenOathPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (AbilitySystemComponent && DeadStateChangedHandle.IsValid())
+	{
+		AbilitySystemComponent->RegisterGameplayTagEvent(
+			AshenOathGameplayTags::State_Dead,
+			EGameplayTagEventType::NewOrRemoved
+		).Remove(DeadStateChangedHandle);
+		DeadStateChangedHandle.Reset();
+	}
+
+	if (CombatActionComponent)
+	{
+		CombatActionComponent->CancelCurrentAction(0.0f);
+		CombatActionComponent->StopResourceRecovery();
+	}
+
 	if (AbilitySystemComponent)
 	{
 		// ActorInfo contains weak references into the world; release them before teardown.
@@ -86,18 +129,13 @@ void AAshenOathPlayerCharacter::RequestMove(const FVector2D& MovementIntent,floa
 	// FRotator uses (Pitch, Yaw, Roll). Keeping only yaw gives a horizontal reference frame.
 	// GetUnitAxis returns its rotated local axes in world space: X is forward, Y is right.
 	const FRotator YawRotation(0.0f, ReferenceYaw, 0.0f);
-	const FVector ForwardDirection =
-		FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
-	const FVector RightDirection =
-		FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+	const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
+	const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
 
 	// Input uses X=right and Y=forward, so the axis pairing below is intentional.
-	// CharacterMovement consumes this intent and integrates time;
 	AddMovementInput(ForwardDirection, MovementIntent.Y);
 	AddMovementInput(RightDirection, MovementIntent.X);
 }
-
-
 
 void AAshenOathPlayerCharacter::ApplyInitialAttributes()
 {
@@ -126,9 +164,7 @@ void AAshenOathPlayerCharacter::ApplyInitialAttributes()
 	}
 
 	const FActiveGameplayEffectHandle AppliedHandle =
-		AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(
-			*EffectSpec.Data.Get()
-		);
+		AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*EffectSpec.Data.Get());
 
 	if (AppliedHandle.WasSuccessfullyApplied())
 	{
@@ -136,7 +172,58 @@ void AAshenOathPlayerCharacter::ApplyInitialAttributes()
 	}
 }
 
+ECombatActionStartResult AAshenOathPlayerCharacter::RequestLightAttack()
+{
+	return TryStartCombatAction(LightAttackAction);
+}
 
+ECombatActionStartResult AAshenOathPlayerCharacter::RequestDodge(const FVector2D& MovementIntent)
+{
+	// A normalized threshold gives the backward action a clear rear cone while
+	// small sideways stick noise continues to use the reusable forward flip.
+	const FVector2D DodgeIntent = MovementIntent.GetSafeNormal();
+	const bool bWantsBackwardDodge = DodgeIntent.Y < -0.5f;
+	const UCombatActionData* DodgeAction = bWantsBackwardDodge
+		                                      ? BackwardDodgeAction.Get()
+		                                      : ForwardDodgeAction.Get();
+	FVector DodgeDirection = GetActorForwardVector();
 
+	if (!DodgeIntent.IsNearlyZero())
+	{
+		const float ReferenceYaw = GetController() ? GetController()->GetControlRotation().Yaw : GetActorRotation().Yaw;
+		const FRotator YawRotation(0.0f, ReferenceYaw, 0.0f);
+		DodgeDirection =
+			FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X) * DodgeIntent.Y +
+			FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y) * DodgeIntent.X;
+	}
 
+	return TryStartCombatAction(DodgeAction, DodgeDirection);
+}
 
+ECombatActionStartResult AAshenOathPlayerCharacter::TryStartCombatAction(const UCombatActionData* ActionData,
+	                                                                      const FVector& MovementDirection)
+{
+	if (!GetController() || IsActorBeingDestroyed() || !CombatActionComponent || !AbilitySystemComponent)
+	{
+		return ECombatActionStartResult::RejectedInvalidOwner;
+	}
+
+	if (AbilitySystemComponent->HasMatchingGameplayTag(AshenOathGameplayTags::State_Dead))
+	{
+		return ECombatActionStartResult::RejectedBlockedByState;
+	}
+
+	FCombatActionHandle ActionHandle;
+	return CombatActionComponent->TryStartAction(ActionData, MovementDirection, ActionHandle);
+}
+
+void AAshenOathPlayerCharacter::HandleDeadStateChanged(const FGameplayTag, const int32 NewCount)
+{
+	if (NewCount <= 0 || !CombatActionComponent)
+	{
+		return;
+	}
+
+	CombatActionComponent->CancelCurrentAction(0.0f);
+	CombatActionComponent->StopResourceRecovery();
+}

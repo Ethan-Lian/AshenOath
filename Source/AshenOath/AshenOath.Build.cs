@@ -5,7 +5,7 @@ public class AshenOath : ModuleRules
 	public AshenOath(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
-		
+
 		PublicDependencyModuleNames.AddRange(
 			new string[]
 			{
@@ -15,7 +15,9 @@ public class AshenOath : ModuleRules
 				"InputCore",
 				"EnhancedInput",
 				"GameplayAbilities",
-				"GameplayTags"
+				"GameplayTags",
+				"AshenOathCombat",
+				"UMG"
 			}
 		);
 
@@ -28,6 +30,5 @@ public class AshenOath : ModuleRules
 				"GameplayStateTreeModule"
 			}
 		);
-
 	}
 }

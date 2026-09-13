@@ -13,22 +13,25 @@ struct FInputActionValue;
 
 
 /**
- * Owns local input bindings and mapping registration, then routes intent to the
- * current Character. Movement rules and camera components stay with the body.
-   
-     Local Player
-	      ↓
-  PlayerController
-	├── Register Mapping Context
-	├── Bind Move / Look InputAction
-	├── HandleMove()
-	└── HandleLook()
-			↓
-	Current Possess Pawn/Character
-			↓
-	RequestMove / RequestLook
-			↓
-	CharacterMovement / Camera
+ * Owns local player input and routes player intent to the currently possessed Character.
+ *
+ * The Controller is responsible for Enhanced Input bindings and MappingContext lifetime,
+ * while gameplay rules remain on the Character and its gameplay components.
+ *
+ * Input flow:
+ *
+ * LocalPlayer
+ *     ↓
+ * PlayerController
+ *     ├── MappingContext registration
+ *     ├── InputAction bindings
+ *     └── HandleXxx()
+ *             ↓
+ *     Possessed Character
+ *             ↓
+ *     RequestXxx()
+ *             ↓
+ * CharacterMovement / Camera / CombatActionComponent
  */
 UCLASS()
 class ASHENOATH_API AAshenOathPlayerController : public APlayerController
@@ -36,15 +39,20 @@ class ASHENOATH_API AAshenOathPlayerController : public APlayerController
 	GENERATED_BODY()
 	
 protected:
-	// Engine callbacks: input setup and possession enable gameplay input when ready;
-	// unpossession and EndPlay release the mapping owned by this controller.
-	
-	virtual void SetupInputComponent() override;
-	virtual void OnPossess(APawn* InPawn) override;
-	virtual void OnUnPossess() override;
-	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+    // Bind Enhanced Input callbacks once the controller's InputComponent is available.
+    virtual void SetupInputComponent() override;
+
+    // Refresh gameplay input after the controller gains a pawn.
+    virtual void OnPossess(APawn* InPawn) override;
+
+    // Release controller-owned gameplay input before possession is lost.
+    virtual void OnUnPossess() override;
+
+    // Final cleanup path if the controller leaves play while mappings are still registered.
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	
 private:
+	// Input Action
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Input")
 	TObjectPtr<UInputMappingContext> GameplayMappingContext;
 
@@ -54,7 +62,14 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Input")
 	TObjectPtr<UInputAction> LookAction;
 
-	// Bind once per inputcomponent; possession can change independently.
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Input")
+	TObjectPtr<UInputAction> LightAttackAction;
+
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Input")
+	TObjectPtr<UInputAction> DodgeAction;
+
+	// Input bindings belong to a specific InputComponent.
+    // Possession may change independently, so avoid binding the same component twice.
 	TWeakObjectPtr<UEnhancedInputComponent> BoundInputComponent;
 
 	// Registration records only: weak references do not extend object lifetimes.
@@ -64,12 +79,18 @@ private:
 	TWeakObjectPtr<UEnhancedPlayerInput> RegisteredPlayerInput;
 	TWeakObjectPtr<UInputMappingContext> RegisteredMappingContext;
 
-	// Invoked by Enhanced Input through the bindings made in SetupInputComponent.
+	// The dodge request samples the latest two-dimensional movement intent.
+	// Completed/Canceled input events reset this to zero when movement is released.
+	FVector2D CurrentMovementIntent = FVector2D::ZeroVector;
+
+	// Enhanced Input callbacks. They translate raw input into Character-level requests.
 	void HandleMove(const FInputActionValue& Value);
 	void HandleLook(const FInputActionValue& Value);
-	
-	// Shared helpers must tolerate repeated calls from different lifecycle paths.
+	void HandleLightAttack();
+	void HandleDodge();
+
+	// Input setup and possession become ready independently.
+    // These helpers keep MappingContext registration idempotent across both lifecycle paths.
 	void RefreshGameplayInputMapping();
 	void RemoveGameplayInputMapping();
-	
 };

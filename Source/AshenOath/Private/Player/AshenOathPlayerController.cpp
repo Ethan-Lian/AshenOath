@@ -9,8 +9,6 @@
 #include "InputActionValue.h"
 #include "InputMappingContext.h"
 
-DEFINE_LOG_CATEGORY_STATIC(LogAshenOathPlayerInput, Log, All);
-
 void AAshenOathPlayerController::SetupInputComponent()
 {
 	// Super(父类) prepares the component; the Cast below checks its type without creating one.
@@ -18,40 +16,55 @@ void AAshenOathPlayerController::SetupInputComponent()
 
 	UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(InputComponent);
 
-	if (!EnhancedInput || !GameplayMappingContext || !MoveAction || !LookAction)
+	if (!EnhancedInput || !GameplayMappingContext)
 	{
-		UE_LOG(
-			LogAshenOathPlayerInput,
-			Warning,
-			TEXT("%s: Check EnhancedInputComponent, GameplayMappingContext, MoveAction and LookAction."),
-			*GetName()
-		);
-		return;
-	}
-
-	if (MoveAction->ValueType != EInputActionValueType::Axis2D ||
-		LookAction->ValueType != EInputActionValueType::Axis2D)
-	{
-		UE_LOG(
-			LogAshenOathPlayerInput,
-			Warning,
-			TEXT("%s: MoveAction and LookAction must both use Axis2D."),
-			*GetName()
-		);
 		return;
 	}
 
 	if (BoundInputComponent.Get() != EnhancedInput)
 	{
-		// Bind callback function on this instance. 
-		EnhancedInput->BindAction(
-			MoveAction, ETriggerEvent::Triggered,
-			this, &AAshenOathPlayerController::HandleMove
-		);
-		EnhancedInput->BindAction(
-			LookAction, ETriggerEvent::Triggered,
-			this, &AAshenOathPlayerController::HandleLook
-		);
+		// Bind each configured action independently. A missing new action should
+		// not disable movement or previously configured combat input.
+		if (MoveAction && MoveAction->ValueType == EInputActionValueType::Axis2D)
+		{
+			EnhancedInput->BindAction(
+				MoveAction, ETriggerEvent::Triggered,
+				this, &AAshenOathPlayerController::HandleMove
+			);
+			EnhancedInput->BindAction(
+				MoveAction, ETriggerEvent::Completed,
+				this, &AAshenOathPlayerController::HandleMove
+			);
+			EnhancedInput->BindAction(
+				MoveAction, ETriggerEvent::Canceled,
+				this, &AAshenOathPlayerController::HandleMove
+			);
+		}
+
+		if (LookAction && LookAction->ValueType == EInputActionValueType::Axis2D)
+		{
+			EnhancedInput->BindAction(
+				LookAction, ETriggerEvent::Triggered,
+				this, &AAshenOathPlayerController::HandleLook
+			);
+		}
+
+		if (LightAttackAction && LightAttackAction->ValueType == EInputActionValueType::Boolean)
+		{
+			EnhancedInput->BindAction(
+				LightAttackAction, ETriggerEvent::Started,
+				this, &AAshenOathPlayerController::HandleLightAttack
+			);
+		}
+
+		if (DodgeAction && DodgeAction->ValueType == EInputActionValueType::Boolean)
+		{
+			EnhancedInput->BindAction(
+				DodgeAction, ETriggerEvent::Started,
+				this, &AAshenOathPlayerController::HandleDodge
+			);
+		}
+
 		BoundInputComponent = EnhancedInput;
 	}
 
@@ -90,6 +103,7 @@ void AAshenOathPlayerController::OnPossess(APawn* InPawn)
 
 void AAshenOathPlayerController::OnUnPossess()
 {
+	CurrentMovementIntent = FVector2D::ZeroVector;
 	RemoveGameplayInputMapping();
 	Super::OnUnPossess();
 }
@@ -102,14 +116,24 @@ void AAshenOathPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReaso
 
 void AAshenOathPlayerController::HandleMove(const FInputActionValue& Value)
 {
-	if (!IsLocalController() || IsMoveInputIgnored()) return;
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	CurrentMovementIntent = Value.Get<FVector2D>();
+
+	if (IsMoveInputIgnored())
+	{
+		return;
+	}
 	
 	AAshenOathPlayerCharacter* PlayerCharacter = Cast<AAshenOathPlayerCharacter>(GetPawn());
 
 	if (IsValid(PlayerCharacter))
 	{
 		PlayerCharacter->RequestMove(
-			Value.Get<FVector2D>(),
+			CurrentMovementIntent,
 			GetControlRotation().Yaw
 		);
 	}
@@ -148,13 +172,6 @@ void AAshenOathPlayerController::RefreshGameplayInputMapping()
 
 	if (!CurrentPlayerInput || !GameplayMappingContext)
 	{
-		RemoveGameplayInputMapping();
-		UE_LOG(
-			LogAshenOathPlayerInput,
-			Warning,
-			TEXT("%s: EnhancedPlayerInput or GameplayMappingContext is unavailable."),
-			*GetName()
-		);
 		return;
 	}
 
@@ -172,12 +189,6 @@ void AAshenOathPlayerController::RefreshGameplayInputMapping()
 
 	if (Subsystem->HasMappingContext(GameplayMappingContext.Get()))
 	{
-		UE_LOG(
-			LogAshenOathPlayerInput,
-			Warning,
-			TEXT("%s: Gameplay mapping already exists; this controller will not take ownership."),
-			*GetName()
-		);
 		return;
 	}
 
@@ -207,5 +218,35 @@ void AAshenOathPlayerController::RemoveGameplayInputMapping()
 	RegisteredInputSubsystem.Reset();
 	RegisteredPlayerInput.Reset();
 	RegisteredMappingContext.Reset();
+}
+
+void AAshenOathPlayerController::HandleLightAttack()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	AAshenOathPlayerCharacter* PlayerCharacter = Cast<AAshenOathPlayerCharacter>(GetPawn());
+
+	if (IsValid(PlayerCharacter))
+	{
+		PlayerCharacter->RequestLightAttack();
+	}
+}
+
+void AAshenOathPlayerController::HandleDodge()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	AAshenOathPlayerCharacter* PlayerCharacter = Cast<AAshenOathPlayerCharacter>(GetPawn());
+
+	if (IsValid(PlayerCharacter))
+	{
+		PlayerCharacter->RequestDodge(CurrentMovementIntent);
+	}
 }
 

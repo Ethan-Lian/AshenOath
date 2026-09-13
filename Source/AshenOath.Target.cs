@@ -10,6 +10,12 @@ public class AshenOathTarget : TargetRules
 		Type = TargetType.Game;
 		DefaultBuildSettings = BuildSettingsVersion.V7;
 		IncludeOrderVersion = EngineIncludeOrderVersion.Unreal5_8;
-		ExtraModuleNames.Add("AshenOath");
+		ExtraModuleNames.AddRange(
+			new string[]
+			{
+				"AshenOath",
+				"AshenOathCombat"
+			}
+		);
 	}
 }

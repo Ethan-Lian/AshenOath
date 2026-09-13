@@ -20,8 +20,8 @@ void UAshenOathCharacterAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 {
 	Super::NativeUpdateAnimation(DeltaSeconds);
 	
-	// The editor preview has no pawn, and a runtime mesh can be reinitialized with
-	// a different owner. Recheck identity instead of trusting the initial cache forever.
+	// A runtime mesh can be reinitialized with a different owner.
+	// Recheck identity instead of trusting the initial cache forever.
 	if (TryGetPawnOwner() != CachedCharacter.Get() ||
 		!CachedMovementComponent.IsValid())
 	{
