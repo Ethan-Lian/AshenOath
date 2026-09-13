@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "CombatDamageTypes.h"
+#include "GameplayTagContainer.h"
 #include "CombatDamageComponent.generated.h"
 
 class UAbilitySystemComponent;
@@ -25,7 +26,14 @@ public:
 	// Validates and submits one incoming combat damage attempt.
 	// Returns the result of validation and effect application.
 	ECombatDamageResult ApplyDamageAttempt(const FCombatDamageAttempt& Attempt);
+
+	// The game module supplies its native invulnerability tag so this reusable
+	// component does not depend on project-specific tag declarations.
+	void ConfigureInvulnerabilityTag(const FGameplayTag& Tag);
 private:
 	// Resolves an actor's ASC through IAbilitySystemInterface.
 	static UAbilitySystemComponent* ResolveAbilitySystemComponent(AActor* Actor);
+
+	UPROPERTY(EditAnywhere, Category = "Combat Damage")
+	FGameplayTag InvulnerabilityTag;
 };

@@ -4,9 +4,12 @@
 #include "GameFramework/HUD.h"
 #include "AshenOathHUD.generated.h"
 
+class AAshenOathPlayerCharacter;
 class AAshenOathGameMode;
 class UAshenOathHUDRootWidget;
 class AAshenOathBossCharacter;
+class APlayerController;
+class APawn;
 
 
 /**
@@ -30,7 +33,9 @@ protected:
 
 private:
 	void HandleActiveBossChanged(AAshenOathBossCharacter* BossCharacter);
-	
+
+	void HandleActivePlayer(APawn* NewPawn);
+
 	// Root widget class created by this HUD at runtime.
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|UI")
 	TSubclassOf<UAshenOathHUDRootWidget> RootWidgetClass;
@@ -41,6 +46,11 @@ private:
 	
 	// The World owns GameMode. HUD only observes the exact instance from which it registered the delegate.
 	TWeakObjectPtr<AAshenOathGameMode> BoundGameMode;
-	
+
+	// Pawn-change cleanup must use the same controller that supplied the delegate.
+	TWeakObjectPtr<APlayerController> BoundPlayerController;
+
 	FDelegateHandle ActiveBossChangedHandle;
+
+	FDelegateHandle ActivePlayerHandle;
 };

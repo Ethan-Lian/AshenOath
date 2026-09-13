@@ -6,6 +6,7 @@
 #include "Damage/CombatDamageComponent.h"
 #include "Game/AshenOathGameMode.h"
 #include "GameplayEffect.h"
+#include "GameplayTags/AshenOathGameplayTags.h"
 
 AAshenOathBossCharacter::AAshenOathBossCharacter()
 {
@@ -19,6 +20,7 @@ AAshenOathBossCharacter::AAshenOathBossCharacter()
 	StateTreeComponent = CreateDefaultSubobject<UStateTreeComponent>(TEXT("StateTreeComponent"));
 
 	CombatDamageComponent = CreateDefaultSubobject<UCombatDamageComponent>(TEXT("CombatDamageComponent"));
+	CombatDamageComponent->ConfigureInvulnerabilityTag(AshenOathGameplayTags::State_Invulnerable);
 
 	StateTreeComponent->SetStartLogicAutomatically(false);
 }

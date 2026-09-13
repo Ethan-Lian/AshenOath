@@ -4,6 +4,8 @@
 #include "Blueprint/UserWidget.h"
 #include "AshenOathHUDRootWidget.generated.h"
 
+class AAshenOathPlayerCharacter;
+class UAshenOathPlayerStatusWidget;
 class AAshenOathBossCharacter;
 class UAshenOathBossStatusWidget;
 
@@ -22,8 +24,14 @@ class ASHENOATH_API UAshenOathHUDRootWidget : public UUserWidget
 public:
 	void SetActiveBoss(AAshenOathBossCharacter* Boss);
 
+	void SetActivePlayer(AAshenOathPlayerCharacter* Player);
+
 protected:
 	// Required child supplied by WBP_HUDRoot under the name BossStatus.
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UAshenOathBossStatusWidget> BossStatus;
+
+	// Required child supplied by WBP_HUDRoot under the name PlayerStatus.
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UAshenOathPlayerStatusWidget> PlayerStatus;
 };

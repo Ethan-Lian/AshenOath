@@ -16,33 +16,55 @@ void AAshenOathPlayerController::SetupInputComponent()
 
 	UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(InputComponent);
 
-	if (!EnhancedInput || !GameplayMappingContext || !MoveAction || !LookAction || !LightAttackAction)
-	{
-		return;
-	}
-
-	if (MoveAction->ValueType != EInputActionValueType::Axis2D ||
-		LookAction->ValueType != EInputActionValueType::Axis2D ||
-		LightAttackAction->ValueType != EInputActionValueType::Boolean)
+	if (!EnhancedInput || !GameplayMappingContext)
 	{
 		return;
 	}
 
 	if (BoundInputComponent.Get() != EnhancedInput)
 	{
-		// Bind callback function on this instance. 
-		EnhancedInput->BindAction(
-			MoveAction, ETriggerEvent::Triggered,
-			this, &AAshenOathPlayerController::HandleMove
-		);
-		EnhancedInput->BindAction(
-			LookAction, ETriggerEvent::Triggered,
-			this, &AAshenOathPlayerController::HandleLook
-		);
-		EnhancedInput->BindAction(
-			LightAttackAction,ETriggerEvent::Started,
-			this, &AAshenOathPlayerController::HandleLightAttack
-		);
+		// Bind each configured action independently. A missing new action should
+		// not disable movement or previously configured combat input.
+		if (MoveAction && MoveAction->ValueType == EInputActionValueType::Axis2D)
+		{
+			EnhancedInput->BindAction(
+				MoveAction, ETriggerEvent::Triggered,
+				this, &AAshenOathPlayerController::HandleMove
+			);
+			EnhancedInput->BindAction(
+				MoveAction, ETriggerEvent::Completed,
+				this, &AAshenOathPlayerController::HandleMove
+			);
+			EnhancedInput->BindAction(
+				MoveAction, ETriggerEvent::Canceled,
+				this, &AAshenOathPlayerController::HandleMove
+			);
+		}
+
+		if (LookAction && LookAction->ValueType == EInputActionValueType::Axis2D)
+		{
+			EnhancedInput->BindAction(
+				LookAction, ETriggerEvent::Triggered,
+				this, &AAshenOathPlayerController::HandleLook
+			);
+		}
+
+		if (LightAttackAction && LightAttackAction->ValueType == EInputActionValueType::Boolean)
+		{
+			EnhancedInput->BindAction(
+				LightAttackAction, ETriggerEvent::Started,
+				this, &AAshenOathPlayerController::HandleLightAttack
+			);
+		}
+
+		if (DodgeAction && DodgeAction->ValueType == EInputActionValueType::Boolean)
+		{
+			EnhancedInput->BindAction(
+				DodgeAction, ETriggerEvent::Started,
+				this, &AAshenOathPlayerController::HandleDodge
+			);
+		}
+
 		BoundInputComponent = EnhancedInput;
 	}
 
@@ -81,6 +103,7 @@ void AAshenOathPlayerController::OnPossess(APawn* InPawn)
 
 void AAshenOathPlayerController::OnUnPossess()
 {
+	CurrentMovementIntent = FVector2D::ZeroVector;
 	RemoveGameplayInputMapping();
 	Super::OnUnPossess();
 }
@@ -93,14 +116,24 @@ void AAshenOathPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReaso
 
 void AAshenOathPlayerController::HandleMove(const FInputActionValue& Value)
 {
-	if (!IsLocalController() || IsMoveInputIgnored()) return;
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	CurrentMovementIntent = Value.Get<FVector2D>();
+
+	if (IsMoveInputIgnored())
+	{
+		return;
+	}
 	
 	AAshenOathPlayerCharacter* PlayerCharacter = Cast<AAshenOathPlayerCharacter>(GetPawn());
 
 	if (IsValid(PlayerCharacter))
 	{
 		PlayerCharacter->RequestMove(
-			Value.Get<FVector2D>(),
+			CurrentMovementIntent,
 			GetControlRotation().Yaw
 		);
 	}
@@ -199,6 +232,21 @@ void AAshenOathPlayerController::HandleLightAttack()
 	if (IsValid(PlayerCharacter))
 	{
 		PlayerCharacter->RequestLightAttack();
+	}
+}
+
+void AAshenOathPlayerController::HandleDodge()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	AAshenOathPlayerCharacter* PlayerCharacter = Cast<AAshenOathPlayerCharacter>(GetPawn());
+
+	if (IsValid(PlayerCharacter))
+	{
+		PlayerCharacter->RequestDodge(CurrentMovementIntent);
 	}
 }
 

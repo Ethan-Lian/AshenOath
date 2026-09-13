@@ -52,6 +52,7 @@ protected:
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	
 private:
+	// Input Action
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Input")
 	TObjectPtr<UInputMappingContext> GameplayMappingContext;
 
@@ -64,6 +65,9 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Input")
 	TObjectPtr<UInputAction> LightAttackAction;
 
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Input")
+	TObjectPtr<UInputAction> DodgeAction;
+
 	// Input bindings belong to a specific InputComponent.
     // Possession may change independently, so avoid binding the same component twice.
 	TWeakObjectPtr<UEnhancedInputComponent> BoundInputComponent;
@@ -75,14 +79,18 @@ private:
 	TWeakObjectPtr<UEnhancedPlayerInput> RegisteredPlayerInput;
 	TWeakObjectPtr<UInputMappingContext> RegisteredMappingContext;
 
+	// The dodge request samples the latest two-dimensional movement intent.
+	// Completed/Canceled input events reset this to zero when movement is released.
+	FVector2D CurrentMovementIntent = FVector2D::ZeroVector;
+
 	// Enhanced Input callbacks. They translate raw input into Character-level requests.
 	void HandleMove(const FInputActionValue& Value);
 	void HandleLook(const FInputActionValue& Value);
 	void HandleLightAttack();
+	void HandleDodge();
 
 	// Input setup and possession become ready independently.
     // These helpers keep MappingContext registration idempotent across both lifecycle paths.
 	void RefreshGameplayInputMapping();
 	void RemoveGameplayInputMapping();
-	
 };

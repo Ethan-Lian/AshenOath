@@ -14,7 +14,11 @@ enum class ECombatActionStartResult : uint8
 	RejectedInvalidOwner,
 	RejectedInvalidAnimation,
 	RejectedInvalidData,
-	RejectedMontageFailed
+	RejectedMontageFailed,
+	RejectedInvalidCost,
+	RejectedInsufficientResources,
+	RejectedCostApplicationFailed,
+	RejectedBlockedByState
 };
 
 /**

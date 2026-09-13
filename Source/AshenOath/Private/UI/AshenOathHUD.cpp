@@ -1,5 +1,6 @@
 ﻿#include "UI/AshenOathHUD.h"
 
+#include "Characters/AshenOathPlayerCharacter.h"
 #include "Game/AshenOathGameMode.h"
 #include "GameFramework/PlayerController.h"
 #include "UI/AshenOathHUDRootWidget.h"
@@ -24,6 +25,15 @@ void AAshenOathHUD::BeginPlay()
 
 	RootWidget->AddToPlayerScreen();
 
+	// The player belongs to this local controller. The snapshot covers the case
+	// where possession happened before the HUD was created.
+	BoundPlayerController = OwnerController;
+	ActivePlayerHandle = OwnerController->GetOnNewPawnNotifier().AddUObject(
+		this,
+		&AAshenOathHUD::HandleActivePlayer
+	);
+	HandleActivePlayer(OwnerController->GetPawn());
+
 	UWorld* World = GetWorld();
 
 	AAshenOathGameMode* GameMode = World ? World->GetAuthGameMode<AAshenOathGameMode>() : nullptr;
@@ -47,6 +57,17 @@ void AAshenOathHUD::BeginPlay()
 
 void AAshenOathHUD::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (APlayerController* PlayerController = BoundPlayerController.Get())
+	{
+		if (ActivePlayerHandle.IsValid())
+		{
+			PlayerController->GetOnNewPawnNotifier().Remove(ActivePlayerHandle);
+		}
+	}
+
+	ActivePlayerHandle.Reset();
+	BoundPlayerController.Reset();
+
 	if (AAshenOathGameMode* GameMode = BoundGameMode.Get())
 	{
 		if (ActiveBossChangedHandle.IsValid())
@@ -62,6 +83,7 @@ void AAshenOathHUD::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	// Unreal's garbage collector destroys the UObject later when it is no longer referenced.
 	if (RootWidget)
 	{
+		RootWidget->SetActivePlayer(nullptr);
 		RootWidget->SetActiveBoss(nullptr);
 		RootWidget->RemoveFromParent();
 		RootWidget = nullptr;
@@ -75,5 +97,13 @@ void AAshenOathHUD::HandleActiveBossChanged(AAshenOathBossCharacter* BossCharact
 	if (RootWidget)
 	{
 		RootWidget->SetActiveBoss(BossCharacter);
+	}
+}
+
+void AAshenOathHUD::HandleActivePlayer(APawn* NewPawn)
+{
+	if (RootWidget)
+	{
+		RootWidget->SetActivePlayer(Cast<AAshenOathPlayerCharacter>(NewPawn));
 	}
 }

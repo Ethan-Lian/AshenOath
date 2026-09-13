@@ -12,7 +12,8 @@ public class AshenOathCombat : ModuleRules
 				"Core",
 				"CoreUObject",
 				"Engine",
-				"GameplayAbilities"
+				"GameplayAbilities",
+				"GameplayTags"
 			}
 		);
 	}
