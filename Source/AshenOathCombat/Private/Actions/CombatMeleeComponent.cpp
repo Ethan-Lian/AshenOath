@@ -1,5 +1,8 @@
 #include "Actions/CombatMeleeComponent.h"
 
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
+#include "Animation/AnimSequenceBase.h"
 #include "CollisionQueryParams.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Damage/CombatDamageComponent.h"
@@ -26,59 +29,201 @@ void UCombatMeleeComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	// EndPlay can occur while a Montage or Notify State is still active. Clear all
 	// runtime state here so delayed animation callbacks cannot retain a hit window.
-	ResetAction();
+	ResetSession();
 	CachedCharacter.Reset();
 
 	Super::EndPlay(EndPlayReason);
 }
 
-void UCombatMeleeComponent::BeginAction(const FCombatActionHandle& ActionHandle,
-	                                     TSubclassOf<UGameplayEffect> DamageEffect,
-	                                     const float TraceRadius,
-	                                     const TArray<FName>& TraceBones,
-	                                     const bool bCanTriggerPerfectDodge)
+bool UCombatMeleeComponent::CanStartSession(
+	TSubclassOf<UGameplayEffect> DamageEffect,
+	const float TraceRadius,
+	const TArray<FName>& TraceBones,
+	const USkeletalMeshComponent* SourceMesh,
+	const UAnimInstance* SourceAnimInstance) const
 {
-	// The action component permits only one active execution. Reset first so this
-	// snapshot and all per-window state always belong to the supplied handle.
-	ResetAction();
-
-	if (!ActionHandle.IsValid())
+	if (ActiveSessionInstanceId != 0 ||
+		!DamageEffect ||
+		TraceRadius <= KINDA_SMALL_NUMBER ||
+		TraceBones.Num() < 2)
 	{
-		return;
+		return false;
 	}
 
-	ActiveActionInstanceId = ActionHandle.Value;
+	const ACharacter* Character = CachedCharacter.IsValid()
+		? CachedCharacter.Get()
+		: Cast<ACharacter>(GetOwner());
+
+	if (!IsValid(Character) ||
+		Character->IsActorBeingDestroyed() ||
+		!IsValid(SourceMesh) ||
+		SourceMesh != Character->GetMesh() ||
+		!IsValid(SourceAnimInstance) ||
+		SourceAnimInstance->GetSkelMeshComponent() != SourceMesh)
+	{
+		return false;
+	}
+
+	for (const FName TracePointName : TraceBones)
+	{
+		if (TracePointName.IsNone() ||
+			!SourceMesh->DoesSocketExist(TracePointName))
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+FCombatMeleeSessionHandle UCombatMeleeComponent::BeginSession(
+	TSubclassOf<UGameplayEffect> DamageEffect,
+	const float TraceRadius,
+	const TArray<FName>& TraceBones,
+	const bool bCanTriggerPerfectDodge,
+	USkeletalMeshComponent* SourceMesh,
+	UAnimInstance* SourceAnimInstance,
+	UAnimMontage* SourceMontage,
+	const int32 MontageInstanceId)
+{
+	FCombatMeleeSessionHandle SessionHandle;
+
+	// A second caller must not erase the state owned by the current caller.
+	if (!CanStartSession(
+			DamageEffect,
+			TraceRadius,
+			TraceBones,
+			SourceMesh,
+			SourceAnimInstance) ||
+		!IsValid(SourceMontage) ||
+		MontageInstanceId == INDEX_NONE)
+	{
+		return SessionHandle;
+	}
+
+	const FAnimMontageInstance* MontageInstance =
+		SourceAnimInstance->GetMontageInstanceForID(MontageInstanceId);
+
+	if (!MontageInstance ||
+		MontageInstance->Montage != SourceMontage ||
+		!MontageInstance->IsActive())
+	{
+		return SessionHandle;
+	}
+
+	ResetHitWindow();
+
+	SessionHandle.Value = AllocateSessionInstanceId();
+
+	ActiveSessionInstanceId = SessionHandle.Value;
+	ActiveMontageInstanceId = MontageInstanceId;
+	ActiveSourceMesh = SourceMesh;
+	ActiveSourceAnimInstance = SourceAnimInstance;
+	ActiveSourceMontage = SourceMontage;
 	ActiveDamageEffect = DamageEffect;
-	ActiveMeleeTraceRadius = FMath::Max(TraceRadius, 0.0f);
+	ActiveMeleeTraceRadius = TraceRadius;
 	ActiveMeleeTraceBones = TraceBones;
 	bActiveDamageCanTriggerPerfectDodge = bCanTriggerPerfectDodge;
+
+	return SessionHandle;
 }
 
-void UCombatMeleeComponent::EndAction(const FCombatActionHandle& ActionHandle)
+void UCombatMeleeComponent::EndSession(const FCombatMeleeSessionHandle& SessionHandle)
 {
-	if (!ActionHandle.IsValid() || ActiveActionInstanceId != ActionHandle.Value)
+	if (!IsSessionActive(SessionHandle))
 	{
 		return;
 	}
 
-	ResetAction();
+	ResetSession();
 }
 
-void UCombatMeleeComponent::BeginHitWindow(const FCombatActionHandle& ActionHandle,
-	                                        const int32 NotifyInstanceId,
-	                                        const int32 DamageSegmentId)
+bool UCombatMeleeComponent::IsSessionActive(
+	const FCombatMeleeSessionHandle& SessionHandle) const
 {
-	if (!ActionHandle.IsValid() || ActiveActionInstanceId != ActionHandle.Value ||
-	    HasActiveHitWindow() || NotifyInstanceId == INDEX_NONE || DamageSegmentId <= 0)
+	return SessionHandle.IsValid() &&
+		ActiveSessionInstanceId == SessionHandle.Value;
+}
+
+bool UCombatMeleeComponent::HasActiveSession() const
+{
+	return ActiveSessionInstanceId != 0;
+}
+
+void UCombatMeleeComponent::BeginHitWindowFromAnimation(
+	USkeletalMeshComponent* MeshComponent,
+	UAnimSequenceBase* Animation,
+	const int32 MontageInstanceId,
+	const int32 NotifyInstanceId,
+	const int32 DamageSegmentId)
+{
+	if (!IsAnimationSignalOwned(
+			MeshComponent,
+			Animation,
+			MontageInstanceId,
+			true))
 	{
 		return;
 	}
 
-	ACharacter* Character = CachedCharacter.Get();
-	USkeletalMeshComponent* MeshComponent = Character ? Character->GetMesh() : nullptr;
+	BeginHitWindow(GetActiveSessionHandle(), NotifyInstanceId, DamageSegmentId);
+}
 
-	if (!IsValid(MeshComponent) || !ActiveDamageEffect || ActiveMeleeTraceRadius <= 0.0f ||
-	    ActiveMeleeTraceBones.Num() < 2)
+void UCombatMeleeComponent::EndHitWindowFromAnimation(
+	USkeletalMeshComponent* MeshComponent,
+	UAnimSequenceBase* Animation,
+	const int32 MontageInstanceId,
+	const int32 NotifyInstanceId)
+{
+	if (!IsAnimationSignalOwned(
+			MeshComponent,
+			Animation,
+			MontageInstanceId,
+			false))
+	{
+		return;
+	}
+
+	EndHitWindow(GetActiveSessionHandle(), NotifyInstanceId);
+}
+
+void UCombatMeleeComponent::TickHitWindowFromAnimation(
+	USkeletalMeshComponent* MeshComponent,
+	UAnimSequenceBase* Animation,
+	const int32 MontageInstanceId,
+	const int32 NotifyInstanceId)
+{
+	if (!IsAnimationSignalOwned(
+			MeshComponent,
+			Animation,
+			MontageInstanceId,
+			true))
+	{
+		return;
+	}
+
+	TickHitWindow(GetActiveSessionHandle(), NotifyInstanceId);
+}
+
+void UCombatMeleeComponent::BeginHitWindow(
+	const FCombatMeleeSessionHandle& SessionHandle,
+	const int32 NotifyInstanceId,
+	const int32 DamageSegmentId)
+{
+	if (!IsSessionActive(SessionHandle) ||
+		HasActiveHitWindow() ||
+		NotifyInstanceId == INDEX_NONE ||
+		DamageSegmentId <= 0)
+	{
+		return;
+	}
+
+	USkeletalMeshComponent* MeshComponent = ActiveSourceMesh.Get();
+
+	if (!IsValid(MeshComponent) ||
+		!ActiveDamageEffect ||
+		ActiveMeleeTraceRadius <= KINDA_SMALL_NUMBER ||
+		ActiveMeleeTraceBones.Num() < 2)
 	{
 		return;
 	}
@@ -95,7 +240,8 @@ void UCombatMeleeComponent::BeginHitWindow(const FCombatActionHandle& ActionHand
 			return;
 		}
 
-		PreviousMeleeTraceLocations[Index] = MeshComponent->GetSocketLocation(TracePointName);
+		PreviousMeleeTraceLocations[Index] =
+			MeshComponent->GetSocketLocation(TracePointName);
 	}
 
 	ActiveHitWindowNotifyInstanceId = NotifyInstanceId;
@@ -103,9 +249,11 @@ void UCombatMeleeComponent::BeginHitWindow(const FCombatActionHandle& ActionHand
 	HitActorsInCurrentWindow.Reset();
 }
 
-void UCombatMeleeComponent::EndHitWindow(const FCombatActionHandle& ActionHandle,const int32 NotifyInstanceId)
+void UCombatMeleeComponent::EndHitWindow(
+	const FCombatMeleeSessionHandle& SessionHandle,
+	const int32 NotifyInstanceId)
 {
-	if (!IsHitWindowActive(ActionHandle) || ActiveHitWindowNotifyInstanceId != NotifyInstanceId)
+	if (!OwnsHitWindow(SessionHandle, NotifyInstanceId))
 	{
 		return;
 	}
@@ -113,18 +261,19 @@ void UCombatMeleeComponent::EndHitWindow(const FCombatActionHandle& ActionHandle
 	ResetHitWindow();
 }
 
-void UCombatMeleeComponent::TickHitWindow(const FCombatActionHandle& ActionHandle,
-	                                      const int32 NotifyInstanceId)
+void UCombatMeleeComponent::TickHitWindow(
+	const FCombatMeleeSessionHandle& SessionHandle,
+	const int32 NotifyInstanceId)
 {
-	if (!OwnsHitWindow(ActionHandle, NotifyInstanceId))
+	if (!OwnsHitWindow(SessionHandle, NotifyInstanceId))
 	{
 		return;
 	}
 
-	ACharacter* Character = CachedCharacter.Get();
-	USkeletalMeshComponent* MeshComponent = Character ? Character->GetMesh() : nullptr;
+	USkeletalMeshComponent* MeshComponent = ActiveSourceMesh.Get();
 
-	if (!IsValid(MeshComponent) || PreviousMeleeTraceLocations.Num() != ActiveMeleeTraceBones.Num())
+	if (!IsValid(MeshComponent) ||
+		PreviousMeleeTraceLocations.Num() != ActiveMeleeTraceBones.Num())
 	{
 		ResetHitWindow();
 		return;
@@ -149,11 +298,15 @@ void UCombatMeleeComponent::TickHitWindow(const FCombatActionHandle& ActionHandl
 	// Sweep every sample point from its previous position to its current one.
 	for (int32 Index = 0; Index < CurrentTraceLocations.Num(); ++Index)
 	{
-		SweepMeleeSegment(ActionHandle, NotifyInstanceId,
-		                  PreviousMeleeTraceLocations[Index], CurrentTraceLocations[Index]);
+		SweepMeleeSegment(
+			SessionHandle,
+			NotifyInstanceId,
+			PreviousMeleeTraceLocations[Index],
+			CurrentTraceLocations[Index]
+		);
 
-		// Applying damage may synchronously re-enter combat code and end the action.
-		if (!OwnsHitWindow(ActionHandle, NotifyInstanceId))
+		// Applying damage may synchronously re-enter combat code and end the session.
+		if (!OwnsHitWindow(SessionHandle, NotifyInstanceId))
 		{
 			return;
 		}
@@ -164,10 +317,14 @@ void UCombatMeleeComponent::TickHitWindow(const FCombatActionHandle& ActionHandl
 	// can hit targets, not just the sampled sockets/bones.
 	for (int32 Index = 1; Index < CurrentTraceLocations.Num(); ++Index)
 	{
-		SweepMeleeSegment(ActionHandle, NotifyInstanceId,
-		                  CurrentTraceLocations[Index - 1], CurrentTraceLocations[Index]);
+		SweepMeleeSegment(
+			SessionHandle,
+			NotifyInstanceId,
+			CurrentTraceLocations[Index - 1],
+			CurrentTraceLocations[Index]
+		);
 
-		if (!OwnsHitWindow(ActionHandle, NotifyInstanceId))
+		if (!OwnsHitWindow(SessionHandle, NotifyInstanceId))
 		{
 			return;
 		}
@@ -176,29 +333,34 @@ void UCombatMeleeComponent::TickHitWindow(const FCombatActionHandle& ActionHandl
 	PreviousMeleeTraceLocations = MoveTemp(CurrentTraceLocations);
 }
 
-bool UCombatMeleeComponent::IsHitWindowActive(const FCombatActionHandle& ActionHandle) const
+bool UCombatMeleeComponent::IsHitWindowActive(
+	const FCombatMeleeSessionHandle& SessionHandle) const
 {
-	return ActionHandle.IsValid() && ActiveActionInstanceId == ActionHandle.Value && HasActiveHitWindow();
+	return IsSessionActive(SessionHandle) && HasActiveHitWindow();
 }
 
-bool UCombatMeleeComponent::HasActiveHitWindow() const
+int32 UCombatMeleeComponent::AllocateSessionInstanceId()
 {
-	return ActiveActionInstanceId != 0 && ActiveHitWindowNotifyInstanceId != INDEX_NONE &&
-	       ActiveDamageSegmentId > 0;
+	const int32 AllocatedId = NextSessionInstanceId;
+
+	NextSessionInstanceId = NextSessionInstanceId == MAX_int32
+		? 1
+		: NextSessionInstanceId + 1;
+
+	return AllocatedId;
 }
 
-bool UCombatMeleeComponent::OwnsHitWindow(const FCombatActionHandle& ActionHandle,
-	                                      const int32 NotifyInstanceId) const
-{
-	return IsHitWindowActive(ActionHandle) && NotifyInstanceId != INDEX_NONE &&
-	       ActiveHitWindowNotifyInstanceId == NotifyInstanceId;
-}
-
-void UCombatMeleeComponent::ResetAction()
+void UCombatMeleeComponent::ResetSession()
 {
 	ResetHitWindow();
 
-	ActiveActionInstanceId = 0;
+	// Revoke identity first. Any re-entrant animation callback now fails before
+	// the external references and immutable snapshot are released.
+	ActiveSessionInstanceId = 0;
+	ActiveMontageInstanceId = INDEX_NONE;
+	ActiveSourceMesh.Reset();
+	ActiveSourceAnimInstance.Reset();
+	ActiveSourceMontage.Reset();
 	ActiveDamageEffect = nullptr;
 	ActiveMeleeTraceRadius = 0.0f;
 	ActiveMeleeTraceBones.Reset();
@@ -209,51 +371,67 @@ void UCombatMeleeComponent::ResetHitWindow()
 {
 	ActiveHitWindowNotifyInstanceId = INDEX_NONE;
 	ActiveDamageSegmentId = 0;
-
 	PreviousMeleeTraceLocations.Reset();
 	HitActorsInCurrentWindow.Reset();
 }
 
-void UCombatMeleeComponent::SweepMeleeSegment(const FCombatActionHandle& ActionHandle,
-	                                          const int32 NotifyInstanceId,
-	                                          const FVector& Start,
-	                                          const FVector& End)
+void UCombatMeleeComponent::SweepMeleeSegment(
+	const FCombatMeleeSessionHandle& SessionHandle,
+	const int32 NotifyInstanceId,
+	const FVector& Start,
+	const FVector& End)
 {
 	ACharacter* Character = CachedCharacter.Get();
 	UWorld* World = GetWorld();
 
-	if (!IsValid(Character) || !World || !OwnsHitWindow(ActionHandle, NotifyInstanceId))
+	if (!IsValid(Character) ||
+		!World ||
+		!OwnsHitWindow(SessionHandle, NotifyInstanceId))
 	{
 		return;
 	}
 
-	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(AshenOathMeleeSweep), false, Character);
+	FCollisionQueryParams QueryParams(
+		SCENE_QUERY_STAT(AshenOathMeleeSweep),
+		false,
+		Character
+	);
 	const FCollisionObjectQueryParams ObjectQueryParams(ECC_Pawn);
 
 	TArray<FHitResult> HitResults;
 
-	World->SweepMultiByObjectType(HitResults, Start, End, FQuat::Identity, ObjectQueryParams,
-	                              FCollisionShape::MakeSphere(ActiveMeleeTraceRadius), QueryParams);
+	World->SweepMultiByObjectType(
+		HitResults,
+		Start,
+		End,
+		FQuat::Identity,
+		ObjectQueryParams,
+		FCollisionShape::MakeSphere(ActiveMeleeTraceRadius),
+		QueryParams
+	);
 
 	for (const FHitResult& HitResult : HitResults)
 	{
-		if (!OwnsHitWindow(ActionHandle, NotifyInstanceId))
+		if (!OwnsHitWindow(SessionHandle, NotifyInstanceId))
 		{
 			return;
 		}
 
-		SubmitMeleeHit(ActionHandle, NotifyInstanceId, HitResult.GetActor());
+		SubmitMeleeHit(SessionHandle, NotifyInstanceId, HitResult.GetActor());
 	}
 }
 
-void UCombatMeleeComponent::SubmitMeleeHit(const FCombatActionHandle& ActionHandle,
-	                                      const int32 NotifyInstanceId,
-	                                      AActor* HitActor)
+void UCombatMeleeComponent::SubmitMeleeHit(
+	const FCombatMeleeSessionHandle& SessionHandle,
+	const int32 NotifyInstanceId,
+	AActor* HitActor)
 {
 	ACharacter* Character = CachedCharacter.Get();
 
-	if (!OwnsHitWindow(ActionHandle, NotifyInstanceId) || !IsValid(Character) ||
-	    !IsValid(HitActor) || HitActor == Character)
+	if (!OwnsHitWindow(SessionHandle, NotifyInstanceId) ||
+		!IsValid(Character) ||
+		!IsValid(HitActor) ||
+		HitActor == Character)
 	{
 		return;
 	}
@@ -265,7 +443,8 @@ void UCombatMeleeComponent::SubmitMeleeHit(const FCombatActionHandle& ActionHand
 		return;
 	}
 
-	UCombatDamageComponent* DamageComponent = HitActor->FindComponentByClass<UCombatDamageComponent>();
+	UCombatDamageComponent* DamageComponent =
+		HitActor->FindComponentByClass<UCombatDamageComponent>();
 
 	if (!DamageComponent)
 	{
@@ -276,15 +455,81 @@ void UCombatMeleeComponent::SubmitMeleeHit(const FCombatActionHandle& ActionHand
 	// and may re-enter combat code.
 	HitActorsInCurrentWindow.Add(HitActorKey);
 
-	// Data flows from the action snapshot and collision result into a neutral
+	// Data flows from the session snapshot and collision result into a neutral
 	// attempt. Target-side validation and GAS application happen downstream.
 	FCombatDamageAttempt DamageAttempt;
 	DamageAttempt.SourceActor = Character;
 	DamageAttempt.DamageEffect = ActiveDamageEffect;
-	DamageAttempt.AttackInstanceId = ActionHandle.Value;
+	DamageAttempt.AttackInstanceId = SessionHandle.Value;
 	DamageAttempt.HitId = ActiveDamageSegmentId;
 	DamageAttempt.HitTimeSeconds = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
 	DamageAttempt.bCanTriggerPerfectDodge = bActiveDamageCanTriggerPerfectDodge;
 
 	DamageComponent->ApplyDamageAttempt(DamageAttempt);
+}
+
+bool UCombatMeleeComponent::HasActiveHitWindow() const
+{
+	return ActiveSessionInstanceId != 0 &&
+		ActiveHitWindowNotifyInstanceId != INDEX_NONE &&
+		ActiveDamageSegmentId > 0;
+}
+
+bool UCombatMeleeComponent::OwnsHitWindow(
+	const FCombatMeleeSessionHandle& SessionHandle,
+	const int32 NotifyInstanceId) const
+{
+	return IsHitWindowActive(SessionHandle) &&
+		NotifyInstanceId != INDEX_NONE &&
+		ActiveHitWindowNotifyInstanceId == NotifyInstanceId;
+}
+
+bool UCombatMeleeComponent::IsAnimationSignalOwned(
+	const USkeletalMeshComponent* MeshComponent,
+	const UAnimSequenceBase* Animation,
+	const int32 MontageInstanceId,
+	const bool bRequireActiveMontage) const
+{
+	if (ActiveSessionInstanceId == 0 ||
+		MontageInstanceId == INDEX_NONE ||
+		MontageInstanceId != ActiveMontageInstanceId ||
+		!IsValid(MeshComponent) ||
+		!IsValid(Animation) ||
+		MeshComponent != ActiveSourceMesh.Get())
+	{
+		return false;
+	}
+
+	UAnimInstance* AnimInstance = ActiveSourceAnimInstance.Get();
+
+	if (!IsValid(AnimInstance) ||
+		AnimInstance->GetSkelMeshComponent() != MeshComponent)
+	{
+		return false;
+	}
+
+	FAnimMontageInstance* MontageInstance =
+		AnimInstance->GetMontageInstanceForID(MontageInstanceId);
+
+	// NotifyEnd can be dispatched while its Montage instance is being removed.
+	// The already-matched Mesh, AnimInstance and instance ID are sufficient to
+	// close this session's own window, but opening/ticking requires a live owner.
+	if (!MontageInstance)
+	{
+		return !bRequireActiveMontage;
+	}
+
+	if (MontageInstance->Montage != ActiveSourceMontage.Get())
+	{
+		return false;
+	}
+
+	return !bRequireActiveMontage || MontageInstance->IsActive();
+}
+
+FCombatMeleeSessionHandle UCombatMeleeComponent::GetActiveSessionHandle() const
+{
+	FCombatMeleeSessionHandle SessionHandle;
+	SessionHandle.Value = ActiveSessionInstanceId;
+	return SessionHandle;
 }

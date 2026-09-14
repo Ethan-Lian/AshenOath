@@ -11,6 +11,8 @@
 #include "Actions/CombatActionData.h"
 #include "Actions/CombatMeleeComponent.h"
 #include "Damage/CombatDamageComponent.h"
+#include "AbilitySystem/Ability/AshenOathLightAttackAbility.h"
+#include "GameplayAbilitySpec.h"
 
 
 AAshenOathPlayerCharacter::AAshenOathPlayerCharacter()
@@ -33,7 +35,7 @@ AAshenOathPlayerCharacter::AAshenOathPlayerCharacter()
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
-	
+
 	CombatActionComponent = CreateDefaultSubobject<UCombatActionComponent>(TEXT("CombatActionComponent"));
 	CombatMeleeComponent = CreateDefaultSubobject<UCombatMeleeComponent>(TEXT("CombatMeleeComponent"));
 	CombatDamageComponent = CreateDefaultSubobject<UCombatDamageComponent>(TEXT("CombatDamageComponent"));
@@ -73,15 +75,16 @@ void AAshenOathPlayerCharacter::BeginPlay()
 void AAshenOathPlayerCharacter::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
-	
+
 	check(AbilitySystemComponent);
 	check(AttributeSet);
 
 	// Possession is the point at which the authoritative player Controller is known.
 	// Reinitializing ActorInfo also refreshes GAS's cached controller/avatar references.
 	AbilitySystemComponent->InitAbilityActorInfo(this, this);
-	
+
 	ApplyInitialAttributes();
+	GrantConfiguredAbilities();
 }
 
 
@@ -96,18 +99,24 @@ void AAshenOathPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason
 		DeadStateChangedHandle.Reset();
 	}
 
+	// Ability cancellation must happen while ActorInfo is still valid so its
+	// tasks can stop animation and release GAS-owned blocking state.
+	CancelCombatAbilities();
+
 	if (CombatActionComponent)
 	{
 		CombatActionComponent->CancelCurrentAction(0.0f);
 		CombatActionComponent->StopResourceRecovery();
 	}
 
+	LightAttackAbilitySpecHandle = FGameplayAbilitySpecHandle();
+
 	if (AbilitySystemComponent)
 	{
 		// ActorInfo contains weak references into the world; release them before teardown.
 		AbilitySystemComponent->ClearActorInfo();
 	}
-	
+
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -172,9 +181,26 @@ void AAshenOathPlayerCharacter::ApplyInitialAttributes()
 	}
 }
 
-ECombatActionStartResult AAshenOathPlayerCharacter::RequestLightAttack()
+bool AAshenOathPlayerCharacter::RequestLightAttack()
 {
-	return TryStartCombatAction(LightAttackAction);
+	if (!AbilitySystemComponent || IsActorBeingDestroyed())
+	{
+		return false;
+	}
+
+	// Do not let the new GAS path interrupt a legacy dodge.
+	if (!CombatActionComponent ||
+		CombatActionComponent->IsActionActive())
+	{
+		return false;
+	}
+
+	if (LightAttackAbilityClass)
+	{
+		return LightAttackAbilitySpecHandle.IsValid() && AbilitySystemComponent->TryActivateAbility(LightAttackAbilitySpecHandle);
+	}
+
+	return TryStartCombatAction(LightAttackAction) == ECombatActionStartResult::Started;
 }
 
 ECombatActionStartResult AAshenOathPlayerCharacter::RequestDodge(const FVector2D& MovementIntent)
@@ -213,17 +239,96 @@ ECombatActionStartResult AAshenOathPlayerCharacter::TryStartCombatAction(const U
 		return ECombatActionStartResult::RejectedBlockedByState;
 	}
 
+	// Do not let a legacy dodge start while a GAS combat ability is active.
+	if (IsCombatAbilityActive())
+	{
+		return ECombatActionStartResult::RejectedAlreadyActive;
+	}
+
 	FCombatActionHandle ActionHandle;
 	return CombatActionComponent->TryStartAction(ActionData, MovementDirection, ActionHandle);
 }
 
 void AAshenOathPlayerCharacter::HandleDeadStateChanged(const FGameplayTag, const int32 NewCount)
 {
-	if (NewCount <= 0 || !CombatActionComponent)
+	if (NewCount <= 0)
 	{
 		return;
 	}
 
-	CombatActionComponent->CancelCurrentAction(0.0f);
-	CombatActionComponent->StopResourceRecovery();
+	CancelCombatAbilities();
+
+	// Dodge and stamina recovery still belong to the legacy component.
+	if (CombatActionComponent)
+	{
+		CombatActionComponent->CancelCurrentAction(0.0f);
+		CombatActionComponent->StopResourceRecovery();
+	}
+}
+
+void AAshenOathPlayerCharacter::GrantConfiguredAbilities()
+{
+	if (!AbilitySystemComponent ||
+		!LightAttackAbilityClass ||
+		!LightAttackAction)
+	{
+		return;
+	}
+
+	if (LightAttackAbilitySpecHandle.IsValid())
+	{
+		if (AbilitySystemComponent->FindAbilitySpecFromHandle(LightAttackAbilitySpecHandle))
+		{
+			// Repossession refreshes ActorInfo but must not grant a duplicate.
+			return;
+		}
+
+		// The cached handle became stale because somebody removed its Spec.
+		LightAttackAbilitySpecHandle = FGameplayAbilitySpecHandle();
+	}
+
+	const FGameplayAbilitySpec LightAttackSpec(
+		LightAttackAbilityClass,
+		1,
+		INDEX_NONE,
+		LightAttackAction.Get()
+	);
+
+	LightAttackAbilitySpecHandle = AbilitySystemComponent->GiveAbility(LightAttackSpec);
+}
+
+void AAshenOathPlayerCharacter::CancelCombatAbilities()
+{
+	if (!AbilitySystemComponent)
+	{
+		return;
+	}
+
+	FGameplayTagContainer AbilityTags;
+	AbilityTags.AddTag(AshenOathGameplayTags::Ability_Action);
+
+	AbilitySystemComponent->CancelAbilities(&AbilityTags);
+}
+
+bool AAshenOathPlayerCharacter::IsCombatAbilityActive() const
+{
+	if (!AbilitySystemComponent)
+	{
+		return false;
+	}
+
+	for (const FGameplayAbilitySpec& Spec :
+		AbilitySystemComponent->GetActivatableAbilities())
+	{
+		if (Spec.IsActive() &&
+			Spec.Ability &&
+			Spec.Ability->GetAssetTags().HasTag(
+				AshenOathGameplayTags::Ability_Action
+			))
+		{
+			return true;
+		}
+	}
+
+	return false;
 }

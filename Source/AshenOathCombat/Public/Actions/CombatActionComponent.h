@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Actions/CombatActionTypes.h"
+#include "Actions/CombatMeleeTypes.h"
 #include "Components/ActorComponent.h"
 #include "GameplayEffectTypes.h"
 #include "GameplayTagContainer.h"
@@ -17,11 +18,11 @@ class UCombatMeleeComponent;
 class UGameplayEffect;
 
 /**
- * Owns the runtime lifecycle of the Character's current combat action.
+ * Temporary legacy owner for combat actions not yet migrated to GameplayAbility.
  *
  * At most one action may be active at a time. The component owns the action's
- * handle and Montage, and coordinates action-scoped systems such as melee hit
- * detection. UCombatMeleeComponent owns the mutable melee runtime state.
+ * handle and Montage. UCombatMeleeComponent owns the mutable melee runtime state
+ * and validates animation notifications directly against its playback session.
  *
  * Execution IDs distinguish repeated executions of the same action and prevent
  * stale Montage or Notify callbacks from modifying a newer action.
@@ -74,21 +75,9 @@ public:
 	bool IsGameplayTagWindowActiveAt(const FGameplayTag& Tag, double WorldTimeSeconds) const;
 	bool IsGameplayTagWindowApplied(const FGameplayTag& Tag) const;
 
-	/**
-	 * Opens the melee hit window owned by the current action.
-	 *
-	 * NotifyInstanceId identifies this Notify State execution so delayed
-	 * NotifyEnd calls from older executions cannot close a newer hit window.
-	 */
-	void BeginMeleeHitWindow(int32 NotifyInstanceId, int32 DamageSegmentId);
-
-	// Closes the hit window only when the Notify State execution still owns it.
-	void EndMeleeHitWindow(int32 NotifyInstanceId);
-
-	// Called by the active AnimNotifyState after animation evaluation.
-	void TickMeleeHitWindow(int32 NotifyInstanceId);
-
-	bool IsMeleeHitWindowActive() const;
+	// Temporary migration entry used after a GameplayAbility successfully pays
+	// an action cost. Stage C moves this responsibility to a recovery component.
+	void NotifyResourceCostCommitted();
 
 protected:
 	virtual void BeginPlay() override;
@@ -129,6 +118,7 @@ private:
 
 	// Identifies the one action execution currently owned by this component.
 	FCombatActionHandle CurrentAction;
+	FCombatMeleeSessionHandle ActiveMeleeSession;
 
 	// Action data is copied into runtime state so editing a shared Data Asset
 	// cannot mutate an in-flight action.
@@ -157,4 +147,5 @@ private:
 
 	// Zero is reserved for invalid handles.
 	int32 NextActionInstanceId = 1;
+
 };

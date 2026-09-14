@@ -4,6 +4,7 @@
 #include "AbilitySystemInterface.h"
 #include "Actions/CombatActionTypes.h"
 #include "GameFramework/Character.h"
+#include "GameplayAbilitySpecHandle.h"
 #include "AshenOathPlayerCharacter.generated.h"
 
 class UAshenOathAttributeSet;
@@ -16,6 +17,7 @@ class UCombatActionData;
 class UCombatDamageComponent;
 class UCombatMeleeComponent;
 struct FGameplayTag;
+class UAshenOathLightAttackAbility;
 
 
 /**
@@ -35,15 +37,16 @@ public:
 
 	// Exposes this Character's ASC through UE's standard AbilitySystem interface.
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
-	
+
 	// Read-only access to the Character's GAS-backed gameplay attributes.
 	const UAshenOathAttributeSet* GetAttributeSet() const;
-	
+
 	// Convert 2D movement input from camera space into world-space movement directions, then pass it to CharacterMovement.
 	void RequestMove(const FVector2D& MovementIntent, float ReferenceYaw);
 
-	// Input flow: Controller -> Character -> CombatActionComponent -> animation.
-	ECombatActionStartResult RequestLightAttack();
+	// True means GAS accepted the activation request. It does not mean the
+	// animation/cost/damage transaction has already completed.
+	bool RequestLightAttack();
 
 	// Selects the available forward/backward dodge presentation from current input.
 	// Movement and invulnerability are added by the following combat-action stages.
@@ -51,7 +54,7 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-	
+
 	virtual void PossessedBy(AController* NewController) override;
 
 private:
@@ -66,12 +69,12 @@ private:
 	UPROPERTY(VisibleAnywhere,Category = "AshenOath|AbilitySystem")
 	TObjectPtr<UAshenOathAttributeSet> AttributeSet;
 
-	// Executes character combat actions and owns their runtime action state.
+	// Temporary owner for dodge and recovery until stages C/D remove the legacy path.
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category = "AshenOath|Combat",meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UCombatActionComponent> CombatActionComponent;
 
 	// Owns weapon tracing, hit-window state, and per-window hit deduplication.
-	// CombatActionComponent starts and ends its state with each action execution.
+	// A light-attack Ability starts and ends one identity-bound detection session.
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category = "AshenOath|Combat",meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UCombatMeleeComponent> CombatMeleeComponent;
 
@@ -85,6 +88,12 @@ private:
 	UPROPERTY(EditDefaultsOnly,Category = "AshenOath|Combat")
 	TObjectPtr<UCombatActionData> LightAttackAction;
 
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Abilities")
+	TSubclassOf<UAshenOathLightAttackAbility> LightAttackAbilityClass;
+
+	// Identifies the granted spec, not an individual execution.
+	FGameplayAbilitySpecHandle LightAttackAbilitySpecHandle;
+
 	// Forward dodge is also used for neutral and side input because the first
 	// playable version reuses one forward flip for those directions.
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Dodge")
@@ -96,20 +105,19 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Stamina")
 	TSubclassOf<UGameplayEffect> StaminaRecoveryEffect;
 
-	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Stamina",
-		meta = (ClampMin = "0.0", Units = "s"))
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Stamina",meta = (ClampMin = "0.0", Units = "s"))
 	float StaminaRecoveryDelay = 1.0f;
-	
+
 	// GameplayEffect class used to initialize the Character's starting attributes.
 	UPROPERTY(EditDefaultsOnly,Category = "AshenOath|AbilitySystem")
 	TSubclassOf<UGameplayEffect> InitialAttributesEffect;
-	
+
 	UPROPERTY(VisibleAnywhere, Category = "AshenOath|Camera")
 	TObjectPtr<USpringArmComponent> CameraBoom;
 
 	UPROPERTY(VisibleAnywhere, Category = "AshenOath|Camera")
 	TObjectPtr<UCameraComponent> FollowCamera;
-	
+
 	// PossessedBy may run again after repossession; initial stats are applied only once.
 	bool bInitialAttributesApplied = false;
 	FDelegateHandle DeadStateChangedHandle;
@@ -122,4 +130,11 @@ private:
 	                                             const FVector& MovementDirection = FVector::ZeroVector);
 
 	void HandleDeadStateChanged(const FGameplayTag Tag, int32 NewCount);
+
+	void GrantConfiguredAbilities();
+
+	void CancelCombatAbilities();
+
+	// Temporary bridge while dodge still uses CombatActionComponent.
+	bool IsCombatAbilityActive() const;
 };

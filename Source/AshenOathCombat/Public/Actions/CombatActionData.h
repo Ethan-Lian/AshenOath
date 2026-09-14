@@ -11,8 +11,8 @@ class UAnimMontage;
 /**
  * Read-only configuration shared by every execution of an action.
  *
- * Runtime state belongs to the components executing this configuration rather
- * than this Data Asset. UCombatActionComponent owns the action and Montage;
+ * Runtime state belongs to the objects executing this configuration rather than
+ * this Data Asset. GameplayAbility normally owns the action and Montage task;
  * UCombatMeleeComponent owns the active melee snapshot and hit-window state.
  */
 

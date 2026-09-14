@@ -102,6 +102,22 @@ ECombatActionStartResult UCombatActionComponent::TryStartAction(const UCombatAct
 		return ECombatActionStartResult::RejectedInvalidAnimation;
 	}
 
+	const bool bHasMeleeConfiguration =
+		ActionData->DamageEffect || !ActionData->MeleeTraceBones.IsEmpty();
+	UCombatMeleeComponent* Melee = MeleeComponent.Get();
+
+	if (bHasMeleeConfiguration &&
+		(!IsValid(Melee) ||
+			!Melee->CanStartSession(
+				ActionData->DamageEffect,
+				ActionData->MeleeTraceRadius,
+				ActionData->MeleeTraceBones,
+				MeshComponent,
+				AnimInstance)))
+	{
+		return ECombatActionStartResult::RejectedInvalidData;
+	}
+
 	UAbilitySystemComponent* AbilitySystemComponent = ResolveAbilitySystemComponent();
 	FGameplayEffectSpecHandle CostSpec;
 
@@ -154,6 +170,34 @@ ECombatActionStartResult UCombatActionComponent::TryStartAction(const UCombatAct
 	ActiveAnimInstance = AnimInstance;
 	ActiveMontage = ActionData->Montage;
 	const FCombatActionHandle StartedAction = CurrentAction;
+	const FAnimMontageInstance* MontageInstance =
+		AnimInstance->GetActiveInstanceForMontage(ActionData->Montage);
+
+	if (!MontageInstance)
+	{
+		FinishAction(StartedAction.Value, true, 0.0f);
+		return ECombatActionStartResult::RejectedMontageFailed;
+	}
+
+	if (bHasMeleeConfiguration)
+	{
+		ActiveMeleeSession = Melee->BeginSession(
+			ActionData->DamageEffect,
+			ActionData->MeleeTraceRadius,
+			ActionData->MeleeTraceBones,
+			ActionData->bCanTriggerPerfectDodge,
+			MeshComponent,
+			AnimInstance,
+			ActionData->Montage,
+			MontageInstance->GetInstanceID()
+		);
+
+		if (!ActiveMeleeSession.IsValid())
+		{
+			FinishAction(StartedAction.Value, true, 0.0f);
+			return ECombatActionStartResult::RejectedInvalidData;
+		}
+	}
 
 	if (!ActionData->StartSection.IsNone())
 	{
@@ -198,11 +242,6 @@ ECombatActionStartResult UCombatActionComponent::TryStartAction(const UCombatAct
 	{
 		InitializeActionRuntime(*ActionData, MovementDirection);
 
-		if (UCombatMeleeComponent* Melee = MeleeComponent.Get())
-		{
-			Melee->BeginAction(StartedAction, ActionData->DamageEffect, ActionData->MeleeTraceRadius,
-			                   ActionData->MeleeTraceBones, ActionData->bCanTriggerPerfectDodge);
-		}
 	}
 
 	OutHandle = StartedAction;
@@ -581,6 +620,11 @@ void UCombatActionComponent::StartResourceRecovery()
 	}
 }
 
+void UCombatActionComponent::NotifyResourceCostCommitted()
+{
+	RestartResourceRecovery();
+}
+
 int32 UCombatActionComponent::AllocateActionInstanceId()
 {
 	const int32 AllocatedId = NextActionInstanceId;
@@ -607,11 +651,11 @@ void UCombatActionComponent::FinishAction(int32 ExpectedActionId, bool bStopMont
 	UAnimInstance* AnimInstance = ActiveAnimInstance.Get();
 	UAnimMontage* AnimMontage = ActiveMontage.Get();
 
-	// End dependent action-scoped state while the handle is still valid. The
-	// melee component rejects stale cleanup requests using the same handle.
+	// End dependent action-scoped state while its exact session handle is stable.
+	// The melee component rejects stale cleanup from an older action execution.
 	if (UCombatMeleeComponent* Melee = MeleeComponent.Get())
 	{
-		Melee->EndAction(CurrentAction);
+		Melee->EndSession(ActiveMeleeSession);
 	}
 
 	ClearActionRuntime();
@@ -620,6 +664,7 @@ void UCombatActionComponent::FinishAction(int32 ExpectedActionId, bool bStopMont
 	// Stopping a Montage may trigger callbacks that re-enter this component.
 	ActiveMontage = nullptr;
 	ActiveAnimInstance.Reset();
+	ActiveMeleeSession.Reset();
 	CurrentAction.Reset();
 
 	if (!AnimInstance || !AnimMontage)
@@ -637,35 +682,4 @@ void UCombatActionComponent::FinishAction(int32 ExpectedActionId, bool bStopMont
 	{
 		AnimInstance->Montage_Stop(FMath::Max(BlendOutTime, 0.0f), AnimMontage);
 	}
-}
-
-void UCombatActionComponent::BeginMeleeHitWindow(int32 NotifyInstanceId, int32 DamageSegmentId)
-{
-	if (UCombatMeleeComponent* Melee = MeleeComponent.Get())
-	{
-		Melee->BeginHitWindow(CurrentAction, NotifyInstanceId, DamageSegmentId);
-	}
-}
-
-void UCombatActionComponent::EndMeleeHitWindow(int32 NotifyInstanceId)
-{
-	if (UCombatMeleeComponent* Melee = MeleeComponent.Get())
-	{
-		Melee->EndHitWindow(CurrentAction, NotifyInstanceId);
-	}
-}
-
-void UCombatActionComponent::TickMeleeHitWindow(const int32 NotifyInstanceId)
-{
-	if (UCombatMeleeComponent* Melee = MeleeComponent.Get())
-	{
-		Melee->TickHitWindow(CurrentAction, NotifyInstanceId);
-	}
-}
-
-bool UCombatActionComponent::IsMeleeHitWindowActive() const
-{
-	const UCombatMeleeComponent* Melee = MeleeComponent.Get();
-
-	return Melee && Melee->IsHitWindowActive(CurrentAction);
 }
