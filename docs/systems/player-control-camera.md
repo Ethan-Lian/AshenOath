@@ -23,8 +23,9 @@ LookAction (Axis2D / Triggered)
 DodgeAction (Boolean / Started)
   → PlayerController.HandleDodge（读取最近 Move 意图）
   → 当前玩家 Character.RequestDodge
-  → 选择前/后翻并转换为世界方向
-  → CombatAction / CharacterMovement
+  → 选择前/后翻 AbilitySpec，并把二维意图冻结为世界方向
+  → Dodge GameplayAbility
+  → 移动 AbilityTask / CharacterMovement
 ```
 
 Controller 的 Move/Look 回调先检查本地控制、对应输入未被忽略及当前 Pawn 有效。每次调用读取当前 Pawn，不长期缓存之前控制的身体。

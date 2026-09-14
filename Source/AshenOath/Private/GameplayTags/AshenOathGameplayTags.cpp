@@ -13,6 +13,12 @@ namespace AshenOathGameplayTags
 		"Ability.Action.LightAttack",
 		"Identifies the player's light-attack ability."
 	);
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Action_Dodge,
+		"Ability.Action.Dodge",
+		"Identifies a combat dodge ability."
+	);
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
 		State_Dead,
 		"State.Dead",

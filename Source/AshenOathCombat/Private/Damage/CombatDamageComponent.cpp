@@ -2,7 +2,7 @@
 
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemInterface.h"
-#include "Actions/CombatActionComponent.h"
+#include "Defense/CombatDefenseComponent.h"
 #include "GameplayEffect.h"
 
 UCombatDamageComponent::UCombatDamageComponent()
@@ -32,17 +32,20 @@ ECombatDamageResult UCombatDamageComponent::ApplyDamageAttempt(const FCombatDama
 
 	if (InvulnerabilityTag.IsValid())
 	{
-		const UCombatActionComponent* CombatAction =
-			TargetActor->FindComponentByClass<UCombatActionComponent>();
-		const bool bDodgeWindowOwnsHitTime = CombatAction &&
-			CombatAction->IsGameplayTagWindowActiveAt(InvulnerabilityTag, Attempt.HitTimeSeconds);
-		const int32 ActionOwnedTagCount = CombatAction &&
-			CombatAction->IsGameplayTagWindowApplied(InvulnerabilityTag) ? 1 : 0;
+		const UCombatDefenseComponent* Defense =
+			TargetActor->FindComponentByClass<UCombatDefenseComponent>();
+		const bool bDodgeWindowOwnsHitTime = Defense &&
+			Defense->IsDodgeWindowActiveAt(
+				InvulnerabilityTag,
+				Attempt.HitTimeSeconds
+			);
+		const int32 DefenseOwnedTagCount = Defense &&
+			Defense->IsWindowTagApplied(InvulnerabilityTag) ? 1 : 0;
 
 		// Independent invulnerability takes priority over the dodge window so a
 		// later perfect-dodge reward cannot be granted while another source is
 		// already protecting the target.
-		if (TargetAbilitySystemComponent->GetTagCount(InvulnerabilityTag) > ActionOwnedTagCount)
+		if (TargetAbilitySystemComponent->GetTagCount(InvulnerabilityTag) > DefenseOwnedTagCount)
 		{
 			return ECombatDamageResult::OtherInvulnerable;
 		}

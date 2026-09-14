@@ -11,7 +11,7 @@
 ## 技术架构
 
 - GAS：负责 Attribute、GameplayEffect、伤害、无敌和跨系统 GameplayTag。
-- Combat Action：负责输入缓冲、当前动作、Montage、Combo Window 和闪避生命周期。
+- GameplayAbility / Combat：Ability 负责具体动作生命周期，Combat 组件分别负责近战检测、闪避窗口、伤害判定和代码位移。
 - StateTree：负责 Boss 的阶段、转阶段和死亡等宏观状态。
 - Utility Evaluator：根据距离、朝向、冷却、玩家近期行为和重复惩罚选择攻击。
 - Projectile Subsystem：负责高密度灵魂投射物的批量模拟与性能测试。

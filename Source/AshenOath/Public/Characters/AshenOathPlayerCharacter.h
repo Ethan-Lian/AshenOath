@@ -15,9 +15,13 @@ class USpringArmComponent;
 class UCombatActionComponent;
 class UCombatActionData;
 class UCombatDamageComponent;
+class UCombatDefenseComponent;
 class UCombatMeleeComponent;
 struct FGameplayTag;
+class UGameplayAbility;
 class UAshenOathLightAttackAbility;
+class UAshenOathDodgeAbility;
+class UAshenOathStaminaRecoveryComponent;
 
 
 /**
@@ -48,8 +52,7 @@ public:
 	// animation/cost/damage transaction has already completed.
 	bool RequestLightAttack();
 
-	// Selects the available forward/backward dodge presentation from current input.
-	// Movement and invulnerability are added by the following combat-action stages.
+	// Selects the forward/backward AbilitySpec and freezes a world-space direction.
 	ECombatActionStartResult RequestDodge(const FVector2D& MovementIntent);
 protected:
 	virtual void BeginPlay() override;
@@ -69,7 +72,7 @@ private:
 	UPROPERTY(VisibleAnywhere,Category = "AshenOath|AbilitySystem")
 	TObjectPtr<UAshenOathAttributeSet> AttributeSet;
 
-	// Temporary owner for dodge and recovery until stages C/D remove the legacy path.
+	// Retained only as the stage-D migration fallback; new combat requests use GAS.
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category = "AshenOath|Combat",meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UCombatActionComponent> CombatActionComponent;
 
@@ -83,6 +86,16 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AshenOath|Combat",
 		meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UCombatDamageComponent> CombatDamageComponent;
+
+	// Owns dodge-window time/source identity and only its own loose tag count.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AshenOath|Combat",
+		meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UCombatDefenseComponent> CombatDefenseComponent;
+
+	// Recovery outlives any one action, so the character owns it independently.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AshenOath|Combat",
+		meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAshenOathStaminaRecoveryComponent> StaminaRecoveryComponent;
 
 	// Data definition used when requesting the player's light attack.
 	UPROPERTY(EditDefaultsOnly,Category = "AshenOath|Combat")
@@ -101,6 +114,12 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Dodge")
 	TObjectPtr<UCombatActionData> BackwardDodgeAction;
+
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Abilities")
+	TSubclassOf<UAshenOathDodgeAbility> DodgeAbilityClass;
+
+	FGameplayAbilitySpecHandle ForwardDodgeAbilitySpecHandle;
+	FGameplayAbilitySpecHandle BackwardDodgeAbilitySpecHandle;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Stamina")
 	TSubclassOf<UGameplayEffect> StaminaRecoveryEffect;
@@ -132,9 +151,14 @@ private:
 	void HandleDeadStateChanged(const FGameplayTag Tag, int32 NewCount);
 
 	void GrantConfiguredAbilities();
+	void GrantAbilityIfNeeded(
+		TSubclassOf<UGameplayAbility> AbilityClass,
+		UCombatActionData* ActionData,
+		FGameplayAbilitySpecHandle& InOutHandle
+	);
 
 	void CancelCombatAbilities();
 
-	// Temporary bridge while dodge still uses CombatActionComponent.
+	// Used only to keep the stage-D legacy fallback mutually exclusive.
 	bool IsCombatAbilityActive() const;
 };

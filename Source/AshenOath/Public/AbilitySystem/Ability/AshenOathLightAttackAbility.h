@@ -1,7 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "Abilities/GameplayAbility.h"
+#include "AbilitySystem/Ability/AshenOathCombatAbility.h"
 #include "Actions/CombatMeleeTypes.h"
 #include "AshenOathLightAttackAbility.generated.h"
 
@@ -10,7 +10,7 @@ class UCombatActionData;
 class UCombatMeleeComponent;
 
 UCLASS()
-class ASHENOATH_API UAshenOathLightAttackAbility : public UGameplayAbility
+class ASHENOATH_API UAshenOathLightAttackAbility : public UAshenOathCombatAbility
 {
 	GENERATED_BODY()
 
@@ -24,18 +24,6 @@ protected:
 		const FGameplayTagContainer* SourceTags,
 		const FGameplayTagContainer* TargetTags,
 		FGameplayTagContainer* OptionalRelevantTags
-	) const override;
-
-	virtual bool CheckCost(
-		FGameplayAbilitySpecHandle Handle,
-		const FGameplayAbilityActorInfo* ActorInfo,
-		FGameplayTagContainer* OptionalRelevantTags = nullptr
-	) const override;
-
-	virtual void ApplyCost(
-		FGameplayAbilitySpecHandle Handle,
-		const FGameplayAbilityActorInfo* ActorInfo,
-		FGameplayAbilityActivationInfo ActivationInfo
 	) const override;
 
 	virtual void ActivateAbility(
@@ -54,11 +42,6 @@ protected:
 	) override;
 
 private:
-	const UCombatActionData* ResolveActionData(
-		FGameplayAbilitySpecHandle Handle,
-		const FGameplayAbilityActorInfo* ActorInfo
-	) const;
-
 	bool IsActionDataReady(
 		const UCombatActionData* ActionData,
 		const FGameplayAbilityActorInfo* ActorInfo
@@ -82,7 +65,4 @@ private:
 	TWeakObjectPtr<UCombatMeleeComponent> ActiveMeleeComponent;
 	FCombatMeleeSessionHandle ActiveMeleeSession;
 
-	// ApplyCost is const in GAS, but this flag records the result of the current
-	// InstancedPerActor execution. It is reset immediately before every commit.
-	mutable bool bCostApplicationSucceeded = false;
 };
