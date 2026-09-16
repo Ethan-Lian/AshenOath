@@ -23,6 +23,7 @@ class ASHENOATH_API UAshenOathStaminaRecoveryComponent : public UActorComponent
 public:
 	UAshenOathStaminaRecoveryComponent();
 
+	// Stops any current recovery before replacing the effect and delay.
 	void Configure(TSubclassOf<UGameplayEffect> RecoveryEffect, float DelaySeconds);
 	void NotifyStaminaCostCommitted();
 	void StopRecovery();

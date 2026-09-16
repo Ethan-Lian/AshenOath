@@ -10,10 +10,7 @@ class AAshenOathBossCharacter;
 class UAshenOathBossStatusWidget;
 
 /**
- * Root UMG container owned by the HUD.
- *
- * The HUD calls root widget, while the root organizes
- * and Passes UI updates from the HUD to the appropriate child widgets.
+ * Routes HUD updates to the appropriate child widgets.
  */
 
 UCLASS(Abstract, Blueprintable)
@@ -27,11 +24,9 @@ public:
 	void SetActivePlayer(AAshenOathPlayerCharacter* Player);
 
 protected:
-	// Required child supplied by WBP_HUDRoot under the name BossStatus.
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UAshenOathBossStatusWidget> BossStatus;
 
-	// Required child supplied by WBP_HUDRoot under the name PlayerStatus.
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UAshenOathPlayerStatusWidget> PlayerStatus;
 };

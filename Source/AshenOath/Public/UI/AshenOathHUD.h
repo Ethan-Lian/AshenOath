@@ -13,13 +13,7 @@ class APawn;
 
 
 /**
- * Player-facing UI coordinator.
- *
- * Gameplay defines the authoritative data.
- * HUD decides which UI should respond to gameplay state/events.
- * Widgets handle how that data is presented.
- *
- * HUD Owns the root HUD widget and bridges gameplay systems to UMG.
+ * Owns the root HUD widget and forwards gameplay state to UMG.
  */
 UCLASS()
 class ASHENOATH_API AAshenOathHUD : public AHUD
@@ -36,11 +30,9 @@ private:
 
 	void HandleActivePlayer(APawn* NewPawn);
 
-	// Root widget class created by this HUD at runtime.
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|UI")
 	TSubclassOf<UAshenOathHUDRootWidget> RootWidgetClass;
 
-	// HUD creates and owns RootWidget instance for its active lifetime.
 	UPROPERTY(Transient)
 	TObjectPtr<UAshenOathHUDRootWidget> RootWidget;
 	

@@ -35,6 +35,8 @@ public:
 		float DurationSeconds
 	) const;
 
+	// Reserves a window without applying tags. Store the returned handle before
+	// calling ActivateDodgeWindow so synchronous tag callbacks can clean it up safely.
 	// ExecutionStartWorldTime must use the same UWorld clock as damage attempts.
 	FCombatDefenseWindowHandle BeginDodgeWindow(
 		UObject* Source,

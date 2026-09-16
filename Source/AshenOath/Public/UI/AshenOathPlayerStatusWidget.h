@@ -22,11 +22,9 @@ public:
 protected:
 	virtual void NativeDestruct() override;
 
-	// meta = (BindWidget) means the Blueprint child must contain a ProgressBar named HealthBar.
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UProgressBar> HealthBar;
 
-	// The health bar still works if the optional HealthText widget is absent.
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> HealthText;
 
@@ -37,7 +35,6 @@ protected:
 	TObjectPtr<UTextBlock> StaminaText;
 
 private:
-	// Callback when attribute changed
 	void HandleAttributeChanged(const FOnAttributeChangeData& ChangeData);
 
 	void RefreshHealth();

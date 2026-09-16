@@ -32,10 +32,8 @@ class ASHENOATH_API AAshenOathPlayerCharacter : public ACharacter, public IAbili
 public:
 	AAshenOathPlayerCharacter();
 
-	// Exposes this Character's ASC through UE's standard AbilitySystem interface.
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 
-	// Read-only access to the Character's GAS-backed gameplay attributes.
 	const UAshenOathAttributeSet* GetAttributeSet() const;
 
 	// Converts camera-space input into world-space directions for CharacterMovement.
@@ -56,17 +54,14 @@ protected:
 	virtual void PossessedBy(AController* NewController) override;
 
 private:
-	// Core GAS component owned by this Character for its lifetime.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AshenOath|AbilitySystem",
 		meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
 
-	// Stores GAS-backed attributes for this Character.
 	UPROPERTY(VisibleAnywhere, Category = "AshenOath|AbilitySystem")
 	TObjectPtr<UAshenOathAttributeSet> AttributeSet;
 
 	// Owns weapon tracing, hit-window state, and per-window hit deduplication.
-	// A light-attack Ability starts and ends one identity-bound detection session.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AshenOath|Combat",
 		meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UCombatMeleeComponent> CombatMeleeComponent;
@@ -97,8 +92,6 @@ private:
 	// Identifies the granted spec, not an individual execution.
 	FGameplayAbilitySpecHandle LightAttackAbilitySpecHandle;
 
-	// Forward dodge is also used for neutral and side input because the first
-	// playable version reuses one forward flip for those directions.
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Dodge")
 	TObjectPtr<UCombatActionData> ForwardDodgeAction;
 
@@ -118,7 +111,6 @@ private:
 		meta = (ClampMin = "0.0", Units = "s"))
 	float StaminaRecoveryDelay = 1.0f;
 
-	// GameplayEffect class used to initialize the Character's starting attributes.
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|AbilitySystem")
 	TSubclassOf<UGameplayEffect> InitialAttributesEffect;
 

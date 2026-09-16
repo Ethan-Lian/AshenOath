@@ -10,7 +10,6 @@
 
 AAshenOathBossCharacter::AAshenOathBossCharacter()
 {
-	// Constructor-created subobjects are owned for the character's entire lifetime;
 	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 
 	AbilitySystemComponent->SetIsReplicated(false);
@@ -33,11 +32,9 @@ void AAshenOathBossCharacter::BeginPlay()
 	check(AttributeSet);
 	check(StateTreeComponent);
 
-	// AI has no controller-dependent initialization, so BeginPlay is its GAS boundary.
 	AbilitySystemComponent->InitAbilityActorInfo(this, this);
 	ApplyInitialAttributes();
 
-	// A boss without initialized attributes cannot enter the combat lifecycle.
 	if (!bInitialAttributesApplied)
 	{
 		return;
@@ -60,12 +57,10 @@ void AAshenOathBossCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	if (StateTreeComponent)
 	{
-		// ExitState may still need the ASC, so stop the tree first.
 		StateTreeComponent->StopLogic(TEXT("Boss EndPlay"));
 	}
 
-	// When the boss leaves the gameplay lifecycle, 
-	// unregister it so the UI can remove the corresponding boss UI.
+	// unregister boss so the UI can remove the corresponding boss UI.
 	if (UWorld* World = GetWorld())
 	{
 		if (AAshenOathGameMode* GameMode = World->GetAuthGameMode<AAshenOathGameMode>())
@@ -76,7 +71,6 @@ void AAshenOathBossCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	if (AbilitySystemComponent)
 	{
-		// Drop ActorInfo's world references before the actor and its components disappear.
 		AbilitySystemComponent->ClearActorInfo();
 	}
 
@@ -91,11 +85,8 @@ void AAshenOathBossCharacter::ApplyInitialAttributes()
 	}
 
 	FGameplayEffectContextHandle EffectContext = AbilitySystemComponent->MakeEffectContext();
-	// Record which character created this effect. Calculations can read this source later.
 	EffectContext.AddSourceObject(this);
 
-	// The GameplayEffect class is only a template. MakeOutgoingSpec creates the
-	// runtime effect data GAS can apply, including its level and context.
 	const FGameplayEffectSpecHandle EffectSpec =
 	    AbilitySystemComponent->MakeOutgoingSpec(InitialAttributesEffect, 1.0f, EffectContext);
 

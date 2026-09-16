@@ -27,6 +27,8 @@ public:
 	UPROPERTY(BlueprintAssignable)
 	FCombatMovementTaskFailed OnFailed;
 
+	// Applies world-space displacement over an action-relative interval.
+	// ExecutionStartWorldTime must use the owning UWorld clock.
 	UFUNCTION(BlueprintCallable, Category = "Ability|Tasks",
 		meta = (HidePin = "OwningAbility", DefaultToSelf = "OwningAbility", BlueprintInternalUseOnly = "TRUE"))
 	static UAbilityTask_ApplyCombatMovement* ApplyCombatMovement(

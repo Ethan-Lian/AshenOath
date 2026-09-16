@@ -59,7 +59,6 @@ private:
 	// Completed/Canceled input events reset this to zero when movement is released.
 	FVector2D CurrentMovementIntent = FVector2D::ZeroVector;
 
-	// Enhanced Input callbacks. They translate raw input into Character-level requests.
 	void HandleMove(const FInputActionValue& Value);
 	void HandleLook(const FInputActionValue& Value);
 	void HandleLightAttack();

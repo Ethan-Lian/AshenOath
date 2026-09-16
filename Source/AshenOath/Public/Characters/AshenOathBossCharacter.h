@@ -14,9 +14,8 @@ class UCombatDamageComponent;
 /**
  * AI-side GAS host.
  *
- * Bosses own their ASC and AttributeSet directly, so OwnerActor and AvatarActor
- * are both this character. Unlike a player pawn, a boss needs no possession event;
- * its GAS state becomes usable when the actor enters play.
+ * The Boss owns its ASC and AttributeSet. Both OwnerActor and AvatarActor
+ * are this Character, and GAS initializes in BeginPlay without possession.
  */
 UCLASS()
 class ASHENOATH_API AAshenOathBossCharacter : public ACharacter, public IAbilitySystemInterface
@@ -26,10 +25,8 @@ class ASHENOATH_API AAshenOathBossCharacter : public ACharacter, public IAbility
 public:
 	AAshenOathBossCharacter();
 
-	// Exposes the boss ASC through UE's standard AbilitySystem interface.
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 	
-	// Read-only access to the boss gameplay attributes.
 	const UAshenOathAttributeSet* GetAttributeSet() const;
 
 protected:
@@ -38,17 +35,13 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
-  	// Applies the startup GameplayEffect that initializes the boss attributes.
 	void ApplyInitialAttributes();
 
-	// GameplayEffect used to establish initial Attribute.
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|AbilitySystem")
 	TSubclassOf<UGameplayEffect> InitialAttributesEffect;
 
-	// Guards against accidental duplicate initialization if the lifecycle is extended later.
 	bool bInitialAttributesApplied = false;
 
-	// UPROPERTY/TObjectPtr makes that relationship visible to reflection and GC.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AshenOath|AbilitySystem",meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
 
