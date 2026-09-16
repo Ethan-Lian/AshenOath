@@ -35,7 +35,6 @@ public:
 		const FGameplayEffectModCallbackData& Data
 	) override;
 	
-	// Expands to the reflected FGameplayAttribute accessor plus value get/set/init helpers.
 	ATTRIBUTE_ACCESSORS_BASIC(UAshenOathAttributeSet, Health);
 	ATTRIBUTE_ACCESSORS_BASIC(UAshenOathAttributeSet, MaxHealth);
 	ATTRIBUTE_ACCESSORS_BASIC(UAshenOathAttributeSet, Stamina);

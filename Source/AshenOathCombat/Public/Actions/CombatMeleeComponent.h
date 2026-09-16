@@ -1,21 +1,25 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Actions/CombatMeleeTypes.h"
 #include "Components/ActorComponent.h"
-#include "Actions/CombatActionTypes.h"
 #include "CombatMeleeComponent.generated.h"
 
 class AActor;
 class ACharacter;
+class UAnimInstance;
+class UAnimMontage;
+class UAnimSequenceBase;
 class UGameplayEffect;
+class USkeletalMeshComponent;
 
 /**
- * Owns the runtime state used to detect melee hits for one combat action.
+ * Owns the mutable detection state for one melee session.
  *
- * UCombatActionComponent owns the action lifecycle and supplies a snapshot of
- * the action's melee configuration. Animation hit-window notifications are
- * routed through the action component so stale callbacks can be checked against
- * the active action handle before this component samples the weapon.
+ * The lifecycle owner (normally a GameplayAbility) supplies an immutable combat
+ * snapshot and the exact Montage playback identity. Animation notifications are
+ * then accepted only from that Mesh, AnimInstance and Montage instance, so a
+ * delayed callback from an older execution cannot operate a newer session.
  *
  * This component detects and deduplicates hit actors. The target actor's
  * UCombatDamageComponent remains responsible for validating and applying damage.
@@ -28,76 +32,127 @@ class ASHENOATHCOMBAT_API UCombatMeleeComponent : public UActorComponent
 public:
 	UCombatMeleeComponent();
 
-	/**
-	 * Captures the melee configuration for one action execution.
-	 *
-	 * The values are copied because the Data Asset describes shared configuration,
-	 * while this component owns mutable state for the active execution.
-	 */
-	void BeginAction(const FCombatActionHandle& ActionHandle,
-	                 TSubclassOf<UGameplayEffect> DamageEffect,
-	                 float TraceRadius,
-	                 const TArray<FName>& TraceBones,
-	                 bool bCanTriggerPerfectDodge);
+	bool CanStartSession(
+		TSubclassOf<UGameplayEffect> DamageEffect,
+		float TraceRadius,
+		const TArray<FName>& TraceBones,
+		const USkeletalMeshComponent* SourceMesh,
+		const UAnimInstance* SourceAnimInstance
+	) const;
 
-	// Releases melee state only when the caller still owns the active action.
-	void EndAction(const FCombatActionHandle& ActionHandle);
+	FCombatMeleeSessionHandle BeginSession(
+		TSubclassOf<UGameplayEffect> DamageEffect,
+		float TraceRadius,
+		const TArray<FName>& TraceBones,
+		USkeletalMeshComponent* SourceMesh,
+		UAnimInstance* SourceAnimInstance,
+		UAnimMontage* SourceMontage,
+		int32 MontageInstanceId
+	);
 
-	void BeginHitWindow(const FCombatActionHandle& ActionHandle,
-	                    int32 NotifyInstanceId,
-	                    int32 DamageSegmentId);
+	void EndSession(const FCombatMeleeSessionHandle& SessionHandle);
+	bool IsSessionActive(const FCombatMeleeSessionHandle& SessionHandle) const;
+	bool HasActiveSession() const;
 
-	// Closes the window only when both its action and Notify State still match.
-	void EndHitWindow(const FCombatActionHandle& ActionHandle, int32 NotifyInstanceId);
+	// Animation-facing entry points. MontageInstanceId must come from the notify
+	// event context (or branching-point payload), never from the current Ability.
+	void BeginHitWindowFromAnimation(
+		USkeletalMeshComponent* MeshComponent,
+		UAnimSequenceBase* Animation,
+		int32 MontageInstanceId,
+		int32 NotifyInstanceId
+	);
 
-	// Samples and sweeps the weapon after animation evaluation for the current frame.
-	void TickHitWindow(const FCombatActionHandle& ActionHandle, int32 NotifyInstanceId);
+	void EndHitWindowFromAnimation(
+		USkeletalMeshComponent* MeshComponent,
+		UAnimSequenceBase* Animation,
+		int32 MontageInstanceId,
+		int32 NotifyInstanceId
+	);
 
-	bool IsHitWindowActive(const FCombatActionHandle& ActionHandle) const;
+	void TickHitWindowFromAnimation(
+		USkeletalMeshComponent* MeshComponent,
+		UAnimSequenceBase* Animation,
+		int32 MontageInstanceId,
+		int32 NotifyInstanceId
+	);
+
+	bool IsHitWindowActive(const FCombatMeleeSessionHandle& SessionHandle) const;
+	bool HasActiveHitWindow() const;
 
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
-	bool HasActiveHitWindow() const;
+	int32 AllocateSessionInstanceId();
+	void ResetSession();
 
-	// Clears the execution snapshot and any window owned by that execution.
-	void ResetAction();
+	void BeginHitWindow(
+		const FCombatMeleeSessionHandle& SessionHandle,
+		int32 NotifyInstanceId
+	);
 
-	// Clears per-window trace history and hit deduplication without ending the action.
+	void EndHitWindow(
+		const FCombatMeleeSessionHandle& SessionHandle,
+		int32 NotifyInstanceId
+	);
+
+	void TickHitWindow(
+		const FCombatMeleeSessionHandle& SessionHandle,
+		int32 NotifyInstanceId
+	);
+
 	void ResetHitWindow();
 
-	// Sweeps one melee trace segment and submits valid hit actors.
-	void SweepMeleeSegment(const FCombatActionHandle& ActionHandle,
-	                       int32 NotifyInstanceId,
-	                       const FVector& Start,
-	                       const FVector& End);
+	void SweepMeleeSegment(
+		const FCombatMeleeSessionHandle& SessionHandle,
+		int32 NotifyInstanceId,
+		const FVector& Start,
+		const FVector& End
+	);
 
-	// Converts one detected actor into a target-side combat damage attempt.
-	void SubmitMeleeHit(const FCombatActionHandle& ActionHandle,
-	                    int32 NotifyInstanceId,
-	                    AActor* HitActor);
+	void SubmitMeleeHit(
+		const FCombatMeleeSessionHandle& SessionHandle,
+		int32 NotifyInstanceId,
+		AActor* HitActor
+	);
 
-	bool OwnsHitWindow(const FCombatActionHandle& ActionHandle, int32 NotifyInstanceId) const;
+	bool OwnsHitWindow(
+		const FCombatMeleeSessionHandle& SessionHandle,
+		int32 NotifyInstanceId
+	) const;
 
-	// Weak ownership avoids extending the lifetime of the world-owned character.
+	bool IsAnimationSignalOwned(
+		const USkeletalMeshComponent* MeshComponent,
+		const UAnimSequenceBase* Animation,
+		int32 MontageInstanceId,
+		bool bRequireActiveMontage
+	) const;
+
+	FCombatMeleeSessionHandle GetActiveSessionHandle() const;
+
 	TWeakObjectPtr<ACharacter> CachedCharacter;
+	TWeakObjectPtr<USkeletalMeshComponent> ActiveSourceMesh;
+	TWeakObjectPtr<UAnimInstance> ActiveSourceAnimInstance;
+	TWeakObjectPtr<UAnimMontage> ActiveSourceMontage;
 
-	// Immutable snapshot copied from the action configuration at action start.
+	// Immutable snapshot copied from the action configuration at session start.
 	UPROPERTY(Transient)
 	TSubclassOf<UGameplayEffect> ActiveDamageEffect;
 
 	TArray<FName> ActiveMeleeTraceBones;
 	float ActiveMeleeTraceRadius = 0.0f;
-	bool bActiveDamageCanTriggerPerfectDodge = false;
 
-	// Identifies which action execution owns the current melee snapshot.
-	int32 ActiveActionInstanceId = 0;
+	// Identifies which detection session owns the current melee snapshot.
+	int32 ActiveSessionInstanceId = 0;
+	int32 ActiveMontageInstanceId = INDEX_NONE;
 
-	// Identifies the Notify State and damage segment that own the open window.
+	// Zero is reserved for an invalid session.
+	int32 NextSessionInstanceId = 1;
+
+	// Identifies the Notify State that owns the open window.
 	int32 ActiveHitWindowNotifyInstanceId = INDEX_NONE;
-	int32 ActiveDamageSegmentId = 0;
 
 	// Previous-frame world positions of each ordered weapon sample point.
 	TArray<FVector> PreviousMeleeTraceLocations;

@@ -11,7 +11,6 @@
 
 void AAshenOathPlayerController::SetupInputComponent()
 {
-	// Super(父类) prepares the component; the Cast below checks its type without creating one.
 	Super::SetupInputComponent();
 
 	UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(InputComponent);
@@ -71,22 +70,8 @@ void AAshenOathPlayerController::SetupInputComponent()
 	RefreshGameplayInputMapping();
 }
 
-
-// Super establishes(建立) the control relationship and calls Character::PossessedBy,
+// Super establishes the control relationship and calls Character::PossessedBy,
 // where GAS ActorInfo is refreshed. Check mappings after that relationship is ready.
-/* 
-     Controller : Super::OnPossess
-				↓
-	 Character::PossessedBy
-				↓
-	 InitAbilityActorInfo(this, this)
-				↓
-	Super finish control relationship
-				↓
-		return OnPossess
-				↓
-	RefreshGameplayInputMapping
-*/
 void AAshenOathPlayerController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
@@ -127,7 +112,7 @@ void AAshenOathPlayerController::HandleMove(const FInputActionValue& Value)
 	{
 		return;
 	}
-	
+
 	AAshenOathPlayerCharacter* PlayerCharacter = Cast<AAshenOathPlayerCharacter>(GetPawn());
 
 	if (IsValid(PlayerCharacter))
@@ -142,7 +127,10 @@ void AAshenOathPlayerController::HandleMove(const FInputActionValue& Value)
 void AAshenOathPlayerController::HandleLook(const FInputActionValue& Value)
 {
 	if (!IsLocalController() || IsLookInputIgnored() ||
-		!IsValid(Cast<AAshenOathPlayerCharacter>(GetPawn()))) return;
+		!IsValid(Cast<AAshenOathPlayerCharacter>(GetPawn())))
+	{
+		return;
+	}
 
 	const FVector2D LookInput = Value.Get<FVector2D>();
 	AddYawInput(LookInput.X);
@@ -197,7 +185,6 @@ void AAshenOathPlayerController::RefreshGameplayInputMapping()
 	RegisteredPlayerInput = CurrentPlayerInput;
 	RegisteredMappingContext = GameplayMappingContext.Get();
 }
-
 
 void AAshenOathPlayerController::RemoveGameplayInputMapping()
 {

@@ -11,8 +11,8 @@ class UAnimMontage;
 /**
  * Read-only configuration shared by every execution of an action.
  *
- * Runtime state belongs to the components executing this configuration rather
- * than this Data Asset. UCombatActionComponent owns the action and Montage;
+ * Runtime state belongs to the objects executing this configuration rather than
+ * this Data Asset. GameplayAbility normally owns the action and Montage task;
  * UCombatMeleeComponent owns the active melee snapshot and hit-window state.
  */
 
@@ -45,9 +45,6 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat Action|Melee")
 	TArray<FName> MeleeTraceBones;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat Action|Damage")
-	bool bCanTriggerPerfectDodge = true;
-
 	// Optional code-driven displacement. A zero distance disables movement for
 	// actions such as stationary attacks.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat Action|Movement",
@@ -62,8 +59,8 @@ public:
 		meta = (ClampMin = "0.01", Units = "s", EditCondition = "MovementDistance > 0.0", EditConditionHides))
 	float MovementDuration = 0.0f;
 
-	// Tags granted only during this action-relative window. Dodge data uses
-	// State.Invulnerable; later windows can reuse the same ownership rules.
+	// Tags granted only during this action-relative window.
+	// Dodge data uses State.Invulnerable.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat Action|Window")
 	FGameplayTagContainer WindowTags;
 

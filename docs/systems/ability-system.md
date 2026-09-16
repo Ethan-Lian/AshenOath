@@ -8,7 +8,7 @@
 
 | 入口 | 当前责任 |
 |---|---|
-| [Player Character](../../Source/AshenOath/Private/Characters/AshenOathPlayerCharacter.cpp) | 构造 ASC/AttributeSet 和 Combat 组件；在 `PossessedBy` 刷新 ActorInfo，在 BeginPlay 配置恢复与无敌 Tag 并监听 Dead |
+| [Player Character](../../Source/AshenOath/Private/Characters/AshenOathPlayerCharacter.cpp) | 构造 ASC/AttributeSet、Defense 与耐力恢复等组件；在 `PossessedBy` 刷新 ActorInfo 并授予 Ability，在 BeginPlay 配置恢复与闪避窗口 Tag 并监听 Dead |
 | [Boss Character](../../Source/AshenOath/Private/Characters/AshenOathBossCharacter.cpp) | 构造 ASC/AttributeSet/StateTreeComponent，协调 GAS 与树的启动、退出 |
 | [AttributeSet](../../Source/AshenOath/Private/AbilitySystem/AshenOathAttributeSet.cpp) | 维护 Health/MaxHealth、Stamina/MaxStamina 的范围 |
 | [Native Gameplay Tags](../../Source/AshenOath/Private/GameplayTags/AshenOathGameplayTags.cpp) | 注册 `State.Dead`、`State.Invulnerable`、`State.Staggered` |
@@ -21,13 +21,15 @@
 
 ```text
 BeginPlay
-  → 配置 CombatAction 的恢复 Effect/延迟
+  → 配置 StaminaRecovery 的恢复 Effect/延迟
+  → 配置 CombatDefense 的闪避窗口 Tag
   → 配置 CombatDamage 的 Invulnerable Tag
   → 监听 State.Dead，进入时取消动作并停止恢复
 PossessedBy(NewController)
   → 父类建立占有关系
   → InitAbilityActorInfo(this, this)
   → ApplyInitialAttributes()
+  → 按 SourceObject 授予轻击、前闪与后闪 AbilitySpec（重复占有不重复授予）
 EndPlay
   → 解除 Dead 监听
   → 清理动作、窗口和恢复
@@ -73,4 +75,4 @@ StateTree 关闭自动启动，由 Boss 显式控制顺序：进入逻辑前建�
 
 `PostGameplayEffectExecute` 对应 Effect 执行导致的 BaseValue 修改，不覆盖所有持续效果应用。当前属性回归集中在 Instant Effect，持续与叠加效果需另行验证。
 
-玩家耐力恢复使用一个无限期周期 Effect，每 0.1 秒增加 2 点 Stamina，并继续经过 AttributeSet 的 `[0, MaxStamina]` 约束。CombatAction 只决定何时安装或移除该 Effect，不直接修改属性；详见 [战斗动作与伤害](combat-actions.md)。
+玩家耐力恢复使用一个无限期周期 Effect，每 0.1 秒增加 2 点 Stamina，并继续经过 AttributeSet 的 `[0, MaxStamina]` 约束。`UAshenOathStaminaRecoveryComponent` 只持有自己的延迟计时器和恢复 Effect；任一 Combat Ability 成功提交非零 Cost 后通知它重启恢复，拒绝动作不会改动当前恢复状态。详见 [战斗动作与伤害](combat-actions.md)。
