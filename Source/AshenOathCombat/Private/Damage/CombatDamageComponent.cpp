@@ -16,8 +16,7 @@ ECombatDamageResult UCombatDamageComponent::ApplyDamageAttempt(const FCombatDama
 	AActor* SourceActor = Attempt.SourceActor.Get();
 
 	if (!IsValid(TargetActor) || TargetActor->IsActorBeingDestroyed() || !IsValid(SourceActor) ||
-	    SourceActor->IsActorBeingDestroyed() || !Attempt.DamageEffect || Attempt.AttackInstanceId <= 0 ||
-	    Attempt.HitId <= 0)
+	    SourceActor->IsActorBeingDestroyed() || !Attempt.DamageEffect)
 	{
 		return ECombatDamageResult::Invalid;
 	}

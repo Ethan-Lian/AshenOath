@@ -47,7 +47,6 @@ flowchart TD
 | CombatMovement AbilityTask | 一次代码位移的时间进度、MovementMode 与 RootMotionMode 接管 | Sweep 受阻自然截断；完成、取消和失败均恢复接管状态 |
 | CombatDefense | 闪避窗口的世界时间、来源句柄和自己施加的 loose Tag | 不拥有 Ability；Damage 只通过它区分闪避无敌与其他无敌 |
 | StaminaRecovery | 延迟计时器及自己施加的周期恢复 Effect | 跨越多次动作；只有成功消耗重启，死亡和退出停止 |
-| CombatAction | 阶段 D 前保留的旧实现 | 玩家新轻击/闪避/恢复路径不再使用，待整体回归后删除 |
 | CombatMelee | 伤害配置快照、播放来源身份、武器扫掠、Notify 窗口和窗口内去重 | 不查找当前 Ability；只接受所属 Mesh、AnimInstance、Montage 实例的信号并提交中立伤害尝试 |
 | CombatDamage | 目标侧伤害入口和无敌判定 | 区分闪避无敌与其他无敌，通过源/目标 ASC 应用伤害 Effect |
 | AnimInstance | 本实例的移动表现数据；对 Character/Movement 的弱引用缓存 | 读取实际移动结果，不拥有 Gameplay 动作状态 |

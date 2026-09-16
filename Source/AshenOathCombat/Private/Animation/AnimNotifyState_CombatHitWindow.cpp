@@ -39,8 +39,7 @@ void UAnimNotifyState_CombatHitWindow::NotifyBegin(
 				MeshComp,
 				Animation,
 				MontageInstanceId,
-				EventReference.GetNotifyInstanceID(),
-				HitId
+				EventReference.GetNotifyInstanceID()
 			);
 		}
 	}
@@ -105,8 +104,7 @@ void UAnimNotifyState_CombatHitWindow::BranchingPointNotifyBegin(
 			BranchingPointPayload.SkelMeshComponent,
 			BranchingPointPayload.SequenceAsset,
 			BranchingPointPayload.MontageInstanceID,
-			ResolveBranchingNotifyInstanceId(BranchingPointPayload),
-			HitId
+			ResolveBranchingNotifyInstanceId(BranchingPointPayload)
 		);
 	}
 

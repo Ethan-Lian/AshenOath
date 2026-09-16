@@ -18,6 +18,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "GameplayAbilitySpec.h"
+#include "GameplayEffectTypes.h"
 #include "GameplayTags/AshenOathGameplayTags.h"
 #include "Misc/AutomationTest.h"
 
@@ -164,10 +165,9 @@ bool FAshenOathDodgeAbilityLifecycleTest::RunTest(const FString& Parameters)
 	const FVector ForwardDodgeStart = Player->GetActorLocation();
 	const EMovementMode MovementModeBeforeDodge = Movement->MovementMode;
 
-	TestEqual(
+	TestTrue(
 		TEXT("Configured forward dodge activation is accepted"),
-		Player->RequestDodge(FVector2D::ZeroVector),
-		ECombatActionStartResult::Started
+		Player->RequestDodge(FVector2D::ZeroVector)
 	);
 	TestTrue(TEXT("Dodge ability remains active during its Montage"), HasActiveDodge());
 	TestTrue(
@@ -202,8 +202,6 @@ bool FAshenOathDodgeAbilityLifecycleTest::RunTest(const FString& Parameters)
 	FCombatDamageAttempt DamageAttempt;
 	DamageAttempt.DamageEffect = UAshenOathStaminaRegenerationEffect::StaticClass();
 	DamageAttempt.SourceActor = Source;
-	DamageAttempt.AttackInstanceId = 1;
-	DamageAttempt.HitId = 1;
 	DamageAttempt.HitTimeSeconds = World->GetTimeSeconds();
 
 	TestEqual(
@@ -213,7 +211,6 @@ bool FAshenOathDodgeAbilityLifecycleTest::RunTest(const FString& Parameters)
 	);
 
 	PlayerAbilitySystem->AddLooseGameplayTag(AshenOathGameplayTags::State_Invulnerable);
-	DamageAttempt.HitId = 2;
 	TestEqual(
 		TEXT("Independent invulnerability takes priority over dodge invulnerability"),
 		Damage->ApplyDamageAttempt(DamageAttempt),
@@ -223,10 +220,9 @@ bool FAshenOathDodgeAbilityLifecycleTest::RunTest(const FString& Parameters)
 
 	const float StaminaBeforeRejectedRetrigger =
 		PlayerAbilitySystem->GetNumericAttribute(StaminaAttribute);
-	TestEqual(
+	TestFalse(
 		TEXT("An active dodge cannot retrigger"),
-		Player->RequestDodge(FVector2D::ZeroVector),
-		ECombatActionStartResult::RejectedAlreadyActive
+		Player->RequestDodge(FVector2D::ZeroVector)
 	);
 	TestEqual(
 		TEXT("Rejected dodge does not pay another cost"),
@@ -249,8 +245,10 @@ bool FAshenOathDodgeAbilityLifecycleTest::RunTest(const FString& Parameters)
 		PlayerAbilitySystem->HasMatchingGameplayTag(AshenOathGameplayTags::State_Invulnerable)
 	);
 	const float ForwardDistance = FVector::Dist2D(ForwardDodgeStart, Player->GetActorLocation());
-	TestTrue(TEXT("Code-driven dodge moves the character"), ForwardDistance > 300.0f);
-	TestTrue(TEXT("Dodge stays within its configured distance"), ForwardDistance <= 425.0f);
+	TestTrue(TEXT("Code-driven dodge covers most of its configured distance"),
+		ForwardDistance >= ForwardDodgeData->MovementDistance * 0.9f);
+	TestTrue(TEXT("Dodge does not exceed its configured distance"),
+		ForwardDistance <= ForwardDodgeData->MovementDistance + 1.0f);
 	TestEqual(
 		TEXT("Movement task restores the prior movement mode"),
 		Movement->MovementMode.GetValue(),
@@ -267,10 +265,9 @@ bool FAshenOathDodgeAbilityLifecycleTest::RunTest(const FString& Parameters)
 
 	const FVector BackwardDodgeStart = Player->GetActorLocation();
 	const FVector ActorForward = Player->GetActorForwardVector();
-	TestEqual(
+	TestTrue(
 		TEXT("Backward input activates the backward dodge spec"),
-		Player->RequestDodge(FVector2D(0.0f, -1.0f)),
-		ECombatActionStartResult::Started
+		Player->RequestDodge(FVector2D(0.0f, -1.0f))
 	);
 	const UCombatActionData* BackwardDodgeData = GetActiveDodgeData();
 	TestNotNull(TEXT("Active backward dodge keeps its ActionData source"), BackwardDodgeData);
@@ -332,10 +329,9 @@ bool FAshenOathDodgeAbilityLifecycleTest::RunTest(const FString& Parameters)
 		PlayerAbilitySystem->GetNumericAttribute(MaxStaminaAttribute)
 	);
 	const FVector BlockedDodgeStart = Player->GetActorLocation();
-	TestEqual(
+	TestTrue(
 		TEXT("Dodge toward a wall still activates"),
-		Player->RequestDodge(FVector2D::ZeroVector),
-		ECombatActionStartResult::Started
+		Player->RequestDodge(FVector2D::ZeroVector)
 	);
 	const UCombatActionData* BlockedDodgeData = GetActiveDodgeData();
 	TestNotNull(TEXT("Blocked dodge keeps its ActionData source"), BlockedDodgeData);
@@ -366,10 +362,9 @@ bool FAshenOathDodgeAbilityLifecycleTest::RunTest(const FString& Parameters)
 		StaminaAttribute,
 		PlayerAbilitySystem->GetNumericAttribute(MaxStaminaAttribute)
 	);
-	TestEqual(
+	TestTrue(
 		TEXT("A later dodge receives a clean execution"),
-		Player->RequestDodge(FVector2D::ZeroVector),
-		ECombatActionStartResult::Started
+		Player->RequestDodge(FVector2D::ZeroVector)
 	);
 	const UCombatActionData* FinalDodgeData = GetActiveDodgeData();
 	TestNotNull(TEXT("Later dodge keeps its ActionData source"), FinalDodgeData);
@@ -395,15 +390,104 @@ bool FAshenOathDodgeAbilityLifecycleTest::RunTest(const FString& Parameters)
 
 	PlayerAbilitySystem->RemoveLooseGameplayTag(AshenOathGameplayTags::State_Dead);
 	PlayerAbilitySystem->SetNumericAttributeBase(StaminaAttribute, 0.0f);
-	TestEqual(
+
+	FGameplayAbilitySpec* BackwardDodgeSpec = nullptr;
+	for (FGameplayAbilitySpec& Spec : PlayerAbilitySystem->GetActivatableAbilities())
+	{
+		if (Spec.SourceObject.Get() == BackwardDodgeData)
+		{
+			BackwardDodgeSpec = &Spec;
+			break;
+		}
+	}
+
+	TestNotNull(TEXT("Backward dodge spec remains granted"), BackwardDodgeSpec);
+	TestFalse(
 		TEXT("Insufficient stamina rejects dodge activation"),
-		Player->RequestDodge(FVector2D::ZeroVector),
-		ECombatActionStartResult::RejectedInsufficientResources
+		Player->RequestDodge(FVector2D(0.0f, -1.0f))
 	);
 	TestFalse(
 		TEXT("Rejected request does not restart recovery after death"),
 		Recovery->HasPendingOrActiveRecovery()
 	);
+
+	PlayerAbilitySystem->SetNumericAttributeBase(
+		StaminaAttribute,
+		PlayerAbilitySystem->GetNumericAttribute(MaxStaminaAttribute)
+	);
+	if (BackwardDodgeSpec)
+	{
+		TestFalse(
+			TEXT("Rejected activation clears its pending movement direction"),
+			PlayerAbilitySystem->TryActivateAbility(BackwardDodgeSpec->Handle)
+		);
+	}
+
+	PlayerAbilitySystem->AddLooseGameplayTag(AshenOathGameplayTags::State_Staggered);
+	FGameplayTagContainer ReentrantDefenseTags;
+	ReentrantDefenseTags.AddTag(AshenOathGameplayTags::State_Invulnerable);
+	ReentrantDefenseTags.AddTag(AshenOathGameplayTags::State_Staggered);
+	const FCombatDefenseWindowHandle ReentrantDefenseWindow =
+		Defense->BeginDodgeWindow(
+			Player,
+			ReentrantDefenseTags,
+			0.0f,
+			1.0f,
+			World->GetTimeSeconds()
+		);
+	const FDelegateHandle InvulnerabilityChangedDelegate =
+		PlayerAbilitySystem->RegisterGameplayTagEvent(
+			AshenOathGameplayTags::State_Invulnerable,
+			EGameplayTagEventType::NewOrRemoved
+		).AddLambda(
+			[Defense, ReentrantDefenseWindow](const FGameplayTag, const int32 NewCount)
+			{
+				if (NewCount > 0)
+				{
+					Defense->EndDodgeWindow(ReentrantDefenseWindow);
+				}
+			}
+		);
+
+	Defense->ActivateDodgeWindow(ReentrantDefenseWindow);
+	PlayerAbilitySystem->RegisterGameplayTagEvent(
+		AshenOathGameplayTags::State_Invulnerable,
+		EGameplayTagEventType::NewOrRemoved
+	).Remove(InvulnerabilityChangedDelegate);
+
+	TestFalse(TEXT("Synchronous tag callback releases the Defense window"),
+		Defense->OwnsWindow(ReentrantDefenseWindow));
+	TestEqual(TEXT("Defense cleanup preserves an independently owned tag count"),
+		PlayerAbilitySystem->GetTagCount(AshenOathGameplayTags::State_Staggered),
+		1);
+	TestEqual(TEXT("Defense cleanup removes its applied invulnerability count"),
+		PlayerAbilitySystem->GetTagCount(AshenOathGameplayTags::State_Invulnerable),
+		0);
+	PlayerAbilitySystem->RemoveLooseGameplayTag(AshenOathGameplayTags::State_Staggered);
+
+	bool bRecoveryWasStoppedDuringApplication = false;
+	const FDelegateHandle RecoveryAppliedDelegate =
+		PlayerAbilitySystem->OnActiveGameplayEffectAddedDelegateToSelf.AddLambda(
+			[Recovery, &bRecoveryWasStoppedDuringApplication](
+				UAbilitySystemComponent*,
+				const FGameplayEffectSpec&,
+				FActiveGameplayEffectHandle)
+			{
+				bRecoveryWasStoppedDuringApplication = true;
+				Recovery->StopRecovery();
+			}
+		);
+
+	Recovery->Configure(UAshenOathStaminaRegenerationEffect::StaticClass(), 0.0f);
+	Recovery->NotifyStaminaCostCommitted();
+	PlayerAbilitySystem->OnActiveGameplayEffectAddedDelegateToSelf.Remove(
+		RecoveryAppliedDelegate
+	);
+
+	TestTrue(TEXT("Recovery application can synchronously request cleanup"),
+		bRecoveryWasStoppedDuringApplication);
+	TestFalse(TEXT("Synchronous cleanup leaves no owned recovery state"),
+		Recovery->HasPendingOrActiveRecovery());
 
 	CleanupWorld();
 	return true;

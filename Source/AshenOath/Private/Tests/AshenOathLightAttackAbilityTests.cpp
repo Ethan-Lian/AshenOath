@@ -14,6 +14,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "GameplayAbilitySpec.h"
 #include "GameplayTags/AshenOathGameplayTags.h"
@@ -80,13 +81,15 @@ bool FAshenOathLightAttackAbilityLifecycleTest::RunTest(const FString& Parameter
 	UCombatMeleeComponent* Melee = Player->FindComponentByClass<UCombatMeleeComponent>();
 	USkeletalMeshComponent* Mesh = Player->GetMesh();
 	UAnimInstance* AnimInstance = Mesh ? Mesh->GetAnimInstance() : nullptr;
+	UCharacterMovementComponent* Movement = Player->GetCharacterMovement();
 
 	TestNotNull(TEXT("Player ASC is ready"), PlayerAbilitySystem);
 	TestNotNull(TEXT("Target ASC is ready"), TargetAbilitySystem);
 	TestNotNull(TEXT("Player owns CombatMelee"), Melee);
 	TestNotNull(TEXT("Player animation instance is ready"), AnimInstance);
+	TestNotNull(TEXT("Player movement component is ready"), Movement);
 
-	if (!PlayerAbilitySystem || !TargetAbilitySystem || !Melee || !Mesh || !AnimInstance)
+	if (!PlayerAbilitySystem || !TargetAbilitySystem || !Melee || !Mesh || !AnimInstance || !Movement)
 	{
 		CleanupWorld();
 		return false;
@@ -132,9 +135,24 @@ bool FAshenOathLightAttackAbilityLifecycleTest::RunTest(const FString& Parameter
 	const float TargetHealthBeforeAttack =
 		TargetAbilitySystem->GetNumericAttribute(HealthAttribute);
 
+	Movement->Velocity = FVector(300.0f, 0.0f, 0.0f);
+	Player->RequestMove(FVector2D(1.0f, 0.0f), 0.0f);
+	TestFalse(TEXT("Movement input is pending before the light attack"),
+		Player->GetPendingMovementInputVector().IsNearlyZero());
+
 	TestTrue(TEXT("Light attack activation request is accepted"), Player->RequestLightAttack());
 	TestTrue(TEXT("The light attack Ability remains active during its Montage"), LightAttackSpec->IsActive());
 	TestTrue(TEXT("A successful light attack owns a melee session"), Melee->HasActiveSession());
+	TestTrue(TEXT("An active light attack owns the movement-lock state"),
+		PlayerAbilitySystem->HasMatchingGameplayTag(AshenOathGameplayTags::State_MovementLocked));
+	TestTrue(TEXT("Starting a light attack stops existing movement"),
+		Movement->Velocity.IsNearlyZero());
+	TestTrue(TEXT("Starting a light attack clears pending movement input"),
+		Player->GetPendingMovementInputVector().IsNearlyZero());
+
+	Player->RequestMove(FVector2D(1.0f, 0.0f), 0.0f);
+	TestTrue(TEXT("Movement requests are ignored during a light attack"),
+		Player->GetPendingMovementInputVector().IsNearlyZero());
 
 	const float StaminaAfterAttack =
 		PlayerAbilitySystem->GetNumericAttribute(StaminaAttribute);
@@ -160,8 +178,7 @@ bool FAshenOathLightAttackAbilityLifecycleTest::RunTest(const FString& Parameter
 		Mesh,
 		ActionData->Montage,
 		FirstMontageInstanceId,
-		FirstNotifyInstanceId,
-		1
+		FirstNotifyInstanceId
 	);
 	TestTrue(TEXT("A matching Montage signal opens the hit window"),
 		Melee->HasActiveHitWindow());
@@ -205,6 +222,13 @@ bool FAshenOathLightAttackAbilityLifecycleTest::RunTest(const FString& Parameter
 	TestFalse(TEXT("Cancellation ends the light attack Ability"), LightAttackSpec->IsActive());
 	TestFalse(TEXT("Cancellation releases the melee session"), Melee->HasActiveSession());
 	TestFalse(TEXT("Cancellation closes the hit window"), Melee->HasActiveHitWindow());
+	TestFalse(TEXT("Cancellation releases the movement-lock state"),
+		PlayerAbilitySystem->HasMatchingGameplayTag(AshenOathGameplayTags::State_MovementLocked));
+
+	Player->RequestMove(FVector2D(1.0f, 0.0f), 0.0f);
+	TestFalse(TEXT("Movement requests resume after light-attack cancellation"),
+		Player->GetPendingMovementInputVector().IsNearlyZero());
+	Player->ConsumeMovementInputVector();
 
 	AnimInstance->Montage_Stop(0.0f, ActionData->Montage);
 	PlayerAbilitySystem->SetNumericAttributeBase(
@@ -237,8 +261,7 @@ bool FAshenOathLightAttackAbilityLifecycleTest::RunTest(const FString& Parameter
 		Mesh,
 		ActionData->Montage,
 		FirstMontageInstanceId,
-		SecondNotifyInstanceId,
-		1
+		SecondNotifyInstanceId
 	);
 	TestFalse(TEXT("A delayed NotifyBegin from the old Montage is ignored"),
 		Melee->HasActiveHitWindow());
@@ -247,8 +270,7 @@ bool FAshenOathLightAttackAbilityLifecycleTest::RunTest(const FString& Parameter
 		Mesh,
 		ActionData->Montage,
 		SecondMontageInstanceId,
-		SecondNotifyInstanceId,
-		1
+		SecondNotifyInstanceId
 	);
 	TestTrue(TEXT("The current Montage can open its hit window"),
 		Melee->HasActiveHitWindow());
@@ -282,6 +304,8 @@ bool FAshenOathLightAttackAbilityLifecycleTest::RunTest(const FString& Parameter
 		0.0f);
 	TestFalse(TEXT("Insufficient stamina creates no melee session"),
 		Melee->HasActiveSession());
+	TestFalse(TEXT("Insufficient stamina creates no movement lock"),
+		PlayerAbilitySystem->HasMatchingGameplayTag(AshenOathGameplayTags::State_MovementLocked));
 
 	PlayerAbilitySystem->SetNumericAttributeBase(
 		StaminaAttribute,
@@ -315,6 +339,8 @@ bool FAshenOathLightAttackAbilityLifecycleTest::RunTest(const FString& Parameter
 		StaminaBeforeFailedPlayback);
 	TestFalse(TEXT("A failed Montage leaves no melee session"),
 		Melee->HasActiveSession());
+	TestFalse(TEXT("A failed Montage leaves no movement lock"),
+		PlayerAbilitySystem->HasMatchingGameplayTag(AshenOathGameplayTags::State_MovementLocked));
 
 	PlayerAbilitySystem->ClearAbility(FailedPlaybackSpecHandle);
 	CleanupWorld();

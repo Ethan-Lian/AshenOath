@@ -9,5 +9,6 @@ namespace AshenOathGameplayTags
 
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Dead);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Invulnerable);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_MovementLocked);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Staggered);
 }

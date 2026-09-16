@@ -23,12 +23,17 @@ class ASHENOATHCOMBAT_API UCombatDefenseComponent : public UActorComponent
 public:
 	UCombatDefenseComponent();
 
-	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
-	                           FActorComponentTickFunction* ThisTickFunction) override;
+	virtual void TickComponent(
+		float DeltaTime,
+		ELevelTick TickType,
+		FActorComponentTickFunction* ThisTickFunction
+	) override;
 
-	bool CanBeginDodgeWindow(const FGameplayTagContainer& WindowTags,
-	                         float StartOffsetSeconds,
-	                         float DurationSeconds) const;
+	bool CanBeginDodgeWindow(
+		const FGameplayTagContainer& WindowTags,
+		float StartOffsetSeconds,
+		float DurationSeconds
+	) const;
 
 	// ExecutionStartWorldTime must use the same UWorld clock as damage attempts.
 	FCombatDefenseWindowHandle BeginDodgeWindow(
@@ -38,8 +43,7 @@ public:
 		float DurationSeconds,
 		double ExecutionStartWorldTime
 	);
-	// Second phase: the caller stores the returned handle before this function
-	// can add tags and synchronously trigger cancellation callbacks.
+
 	bool ActivateDodgeWindow(FCombatDefenseWindowHandle Handle);
 
 	void EndDodgeWindow(FCombatDefenseWindowHandle Handle);
@@ -60,9 +64,12 @@ private:
 
 	FCombatDefenseWindowHandle CurrentWindow;
 	TWeakObjectPtr<UObject> CurrentWindowSource;
+
 	FGameplayTagContainer ConfiguredWindowTags;
 	FGameplayTagContainer AppliedWindowTags;
+
 	double WindowStartWorldTime = 0.0;
 	double WindowEndWorldTime = 0.0;
+
 	int32 NextWindowId = 1;
 };

@@ -42,4 +42,5 @@ private:
 	float RecoveryDelay = 0.0f;
 	FTimerHandle RecoveryTimer;
 	FActiveGameplayEffectHandle ActiveRecoveryEffect;
+	uint32 RecoveryGeneration = 0;
 };

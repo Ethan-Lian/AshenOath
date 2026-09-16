@@ -26,7 +26,6 @@ public:
 	UAnimNotifyState_CombatHitWindow();
 	virtual void PostLoad() override;
 
-	// Open the attack window for this notify instance.
 	virtual void NotifyBegin(
 		USkeletalMeshComponent* MeshComp,
 		UAnimSequenceBase* Animation,
@@ -34,14 +33,12 @@ public:
 		const FAnimNotifyEventReference& EventReference
 	) override;
 
-	// Close the attack window for this notify instance.
 	virtual void NotifyEnd(
 		USkeletalMeshComponent* MeshComp,
 		UAnimSequenceBase* Animation,
 		const FAnimNotifyEventReference& EventReference
 	) override;
 
-	// Advances melee sweep detection while the hit window is active.
 	virtual void NotifyTick(
 		USkeletalMeshComponent* MeshComp,
 		UAnimSequenceBase* Animation,
@@ -59,10 +56,6 @@ public:
 	virtual void BranchingPointNotifyEnd(FBranchingPointNotifyPayload& BranchingPointPayload) override;
 
 	virtual FString GetNotifyName_Implementation() const override;
-
-	// Identifies the damage segment represented by this hit window.
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat Hit Window", meta = (ClampMin = "1"))
-	int32 HitId = 1;
 
 private:
 	static UCombatMeleeComponent* ResolveCombatMeleeComponent(

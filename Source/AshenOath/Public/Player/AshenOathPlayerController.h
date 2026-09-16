@@ -13,46 +13,22 @@ struct FInputActionValue;
 
 
 /**
- * Owns local player input and routes player intent to the currently possessed Character.
- *
- * The Controller is responsible for Enhanced Input bindings and MappingContext lifetime,
- * while gameplay rules remain on the Character and its gameplay components.
- *
- * Input flow:
- *
- * LocalPlayer
- *     ↓
- * PlayerController
- *     ├── MappingContext registration
- *     ├── InputAction bindings
- *     └── HandleXxx()
- *             ↓
- *     Possessed Character
- *             ↓
- *     RequestXxx()
- *             ↓
- * CharacterMovement / Camera / CombatActionComponent
+ * Owns local Enhanced Input state and routes player intent to the possessed Character.
+ * Gameplay rules remain on the Character and its gameplay modules.
  */
 UCLASS()
 class ASHENOATH_API AAshenOathPlayerController : public APlayerController
 {
 	GENERATED_BODY()
-	
+
 protected:
-    // Bind Enhanced Input callbacks once the controller's InputComponent is available.
-    virtual void SetupInputComponent() override;
+	virtual void SetupInputComponent() override;
 
-    // Refresh gameplay input after the controller gains a pawn.
-    virtual void OnPossess(APawn* InPawn) override;
+	virtual void OnPossess(APawn* InPawn) override;
+	virtual void OnUnPossess() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
-    // Release controller-owned gameplay input before possession is lost.
-    virtual void OnUnPossess() override;
-
-    // Final cleanup path if the controller leaves play while mappings are still registered.
-    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-	
 private:
-	// Input Action
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Input")
 	TObjectPtr<UInputMappingContext> GameplayMappingContext;
 
@@ -69,7 +45,7 @@ private:
 	TObjectPtr<UInputAction> DodgeAction;
 
 	// Input bindings belong to a specific InputComponent.
-    // Possession may change independently, so avoid binding the same component twice.
+	// Possession may change independently, so avoid binding the same component twice.
 	TWeakObjectPtr<UEnhancedInputComponent> BoundInputComponent;
 
 	// Registration records only: weak references do not extend object lifetimes.
@@ -90,7 +66,7 @@ private:
 	void HandleDodge();
 
 	// Input setup and possession become ready independently.
-    // These helpers keep MappingContext registration idempotent across both lifecycle paths.
+	// These helpers keep MappingContext registration idempotent across both lifecycle paths.
 	void RefreshGameplayInputMapping();
 	void RemoveGameplayInputMapping();
 };

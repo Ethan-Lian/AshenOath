@@ -18,13 +18,24 @@ UAshenOathLightAttackAbility::UAshenOathLightAttackAbility()
 	// Asset tags classify this ability. They are not tags required on the owner.
 	SetAssetTags(AssetTags);
 
+	// The Character enforces this state by clearing existing motion and rejecting
+	// movement requests. GAS removes the tag on every Ability exit path.
+	ActivationOwnedTags.AddTag(AshenOathGameplayTags::State_MovementLocked);
 }
 
-bool UAshenOathLightAttackAbility::CanActivateAbility(FGameplayAbilitySpecHandle Handle,
-                                                      const FGameplayAbilityActorInfo* ActorInfo, const FGameplayTagContainer* SourceTags,
-                                                      const FGameplayTagContainer* TargetTags, FGameplayTagContainer* OptionalRelevantTags) const
+bool UAshenOathLightAttackAbility::CanActivateAbility(
+	const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayTagContainer* SourceTags,
+	const FGameplayTagContainer* TargetTags,
+	FGameplayTagContainer* OptionalRelevantTags) const
 {
-	if (!Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags))
+	if (!Super::CanActivateAbility(
+		Handle,
+		ActorInfo,
+		SourceTags,
+		TargetTags,
+		OptionalRelevantTags))
 	{
 		return false;
 	}
@@ -53,7 +64,10 @@ void UAshenOathLightAttackAbility::ActivateAbility(
 			ActionData->Montage,
 			ActionData->PlayRate,
 			ActionData->StartSection,
-			true
+			true,  // Stop the montage when the Ability ends.
+			1.0f,  // Keep the authored root-motion scale.
+			0.0f,  // Start from the beginning of the selected section.
+			true   // Report interruptions that arrive after blend-out starts.
 		);
 
 	if (!NewMontageTask)
@@ -119,7 +133,6 @@ void UAshenOathLightAttackAbility::ActivateAbility(
 		ActionData->DamageEffect,
 		ActionData->MeleeTraceRadius,
 		ActionData->MeleeTraceBones,
-		ActionData->bCanTriggerPerfectDodge,
 		MeshComponent,
 		AnimInstance,
 		ActionData->Montage,

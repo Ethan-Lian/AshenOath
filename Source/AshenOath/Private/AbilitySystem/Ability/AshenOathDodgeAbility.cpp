@@ -16,15 +16,19 @@ UAshenOathDodgeAbility::UAshenOathDodgeAbility()
 	SetAssetTags(AssetTags);
 }
 
-void UAshenOathDodgeAbility::SetMovementDirectionForNextActivation(
+bool UAshenOathDodgeAbility::TryActivateWithMovementDirection(
 	const FVector& WorldDirection)
 {
 	PendingMovementDirection = WorldDirection.GetSafeNormal2D();
-}
 
-void UAshenOathDodgeAbility::ClearPendingMovementDirection()
-{
+	UAbilitySystemComponent* AbilitySystemComponent = GetAbilitySystemComponentFromActorInfo();
+	const FGameplayAbilitySpecHandle SpecHandle = GetCurrentAbilitySpecHandle();
+	const bool bActivationAccepted = AbilitySystemComponent &&
+		SpecHandle.IsValid() &&
+		AbilitySystemComponent->TryActivateAbility(SpecHandle);
+
 	PendingMovementDirection = FVector::ZeroVector;
+	return bActivationAccepted;
 }
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -69,7 +73,7 @@ void UAshenOathDodgeAbility::ActivateAbility(
 {
 	const UCombatActionData* ActionData = ResolveActionData(Handle, ActorInfo);
 	ActiveMovementDirection = PendingMovementDirection;
-	ClearPendingMovementDirection();
+	PendingMovementDirection = FVector::ZeroVector;
 
 	if (!IsActionDataReady(ActionData, ActorInfo, ActiveMovementDirection))
 	{
@@ -84,6 +88,9 @@ void UAshenOathDodgeAbility::ActivateAbility(
 			ActionData->Montage,
 			ActionData->PlayRate,
 			ActionData->StartSection,
+			true,
+			1.0f,
+			0.0f,
 			true
 		);
 
@@ -175,7 +182,6 @@ void UAshenOathDodgeAbility::ActivateAbility(
 		}
 		return;
 	}
-
 	UAbilityTask_ApplyCombatMovement* NewMovementTask =
 		UAbilityTask_ApplyCombatMovement::ApplyCombatMovement(
 			this,
@@ -218,7 +224,7 @@ void UAshenOathDodgeAbility::EndAbility(
 	MontageTask = nullptr;
 	MovementTask = nullptr;
 	ActiveMovementDirection = FVector::ZeroVector;
-	ClearPendingMovementDirection();
+	PendingMovementDirection = FVector::ZeroVector;
 	ResetCostApplicationResult();
 
 	if (Defense)

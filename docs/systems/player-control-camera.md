@@ -52,7 +52,9 @@ Move 的 Completed/Canceled 会把最近意图清零；UnPossess 也会清零，
 
 ## 移动与镜头的坐标关系
 
-`RequestMove` 接收 `X = 右、Y = 前` 的二维移动意图和参考 Yaw，将意图转换为世界水平方向后交给 CharacterMovement。无 Controller、正在销毁或带 `State.Dead` 的角色拒绝新移动请求；该入口不负责立即清零已有速度。
+`RequestMove` 接收 `X = 右、Y = 前` 的二维移动意图和参考 Yaw，将意图转换为世界水平方向后交给 CharacterMovement。无 Controller、正在销毁，或带 `State.Dead` / `State.MovementLocked` 的角色拒绝新移动请求。
+
+轻击 Ability 激活期间持有 `State.MovementLocked`。角色在该状态首次加入时立即清除待处理移动输入和现有速度，因此身体保持攻击开始时的朝向；自由镜头仍可通过 Look 输入旋转。Ability 正常结束、取消或中断时由 GAS 自动移除该状态。
 
 | 旋转对象 | 当前原生配置 | 作用 |
 |---|---|---|

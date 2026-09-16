@@ -44,7 +44,6 @@ public:
 		TSubclassOf<UGameplayEffect> DamageEffect,
 		float TraceRadius,
 		const TArray<FName>& TraceBones,
-		bool bCanTriggerPerfectDodge,
 		USkeletalMeshComponent* SourceMesh,
 		UAnimInstance* SourceAnimInstance,
 		UAnimMontage* SourceMontage,
@@ -61,8 +60,7 @@ public:
 		USkeletalMeshComponent* MeshComponent,
 		UAnimSequenceBase* Animation,
 		int32 MontageInstanceId,
-		int32 NotifyInstanceId,
-		int32 DamageSegmentId
+		int32 NotifyInstanceId
 	);
 
 	void EndHitWindowFromAnimation(
@@ -92,8 +90,7 @@ private:
 
 	void BeginHitWindow(
 		const FCombatMeleeSessionHandle& SessionHandle,
-		int32 NotifyInstanceId,
-		int32 DamageSegmentId
+		int32 NotifyInstanceId
 	);
 
 	void EndHitWindow(
@@ -106,10 +103,8 @@ private:
 		int32 NotifyInstanceId
 	);
 
-	// Clears per-window trace history and hit deduplication without ending the session.
 	void ResetHitWindow();
 
-	// Sweeps one melee trace segment and submits valid hit actors.
 	void SweepMeleeSegment(
 		const FCombatMeleeSessionHandle& SessionHandle,
 		int32 NotifyInstanceId,
@@ -117,7 +112,6 @@ private:
 		const FVector& End
 	);
 
-	// Converts one detected actor into a target-side combat damage attempt.
 	void SubmitMeleeHit(
 		const FCombatMeleeSessionHandle& SessionHandle,
 		int32 NotifyInstanceId,
@@ -138,7 +132,6 @@ private:
 
 	FCombatMeleeSessionHandle GetActiveSessionHandle() const;
 
-	// Weak ownership avoids extending the lifetime of world-owned animation objects.
 	TWeakObjectPtr<ACharacter> CachedCharacter;
 	TWeakObjectPtr<USkeletalMeshComponent> ActiveSourceMesh;
 	TWeakObjectPtr<UAnimInstance> ActiveSourceAnimInstance;
@@ -150,7 +143,6 @@ private:
 
 	TArray<FName> ActiveMeleeTraceBones;
 	float ActiveMeleeTraceRadius = 0.0f;
-	bool bActiveDamageCanTriggerPerfectDodge = false;
 
 	// Identifies which detection session owns the current melee snapshot.
 	int32 ActiveSessionInstanceId = 0;
@@ -159,9 +151,8 @@ private:
 	// Zero is reserved for an invalid session.
 	int32 NextSessionInstanceId = 1;
 
-	// Identifies the Notify State and damage segment that own the open window.
+	// Identifies the Notify State that owns the open window.
 	int32 ActiveHitWindowNotifyInstanceId = INDEX_NONE;
-	int32 ActiveDamageSegmentId = 0;
 
 	// Previous-frame world positions of each ordered weapon sample point.
 	TArray<FVector> PreviousMeleeTraceLocations;

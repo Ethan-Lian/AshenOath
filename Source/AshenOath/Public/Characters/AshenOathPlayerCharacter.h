@@ -2,7 +2,6 @@
 
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
-#include "Actions/CombatActionTypes.h"
 #include "GameFramework/Character.h"
 #include "GameplayAbilitySpecHandle.h"
 #include "AshenOathPlayerCharacter.generated.h"
@@ -12,7 +11,6 @@ class UAbilitySystemComponent;
 class UGameplayEffect;
 class UCameraComponent;
 class USpringArmComponent;
-class UCombatActionComponent;
 class UCombatActionData;
 class UCombatDamageComponent;
 class UCombatDefenseComponent;
@@ -23,13 +21,8 @@ class UAshenOathLightAttackAbility;
 class UAshenOathDodgeAbility;
 class UAshenOathStaminaRecoveryComponent;
 
-
 /**
  * Player-side GAS host, movement and combat actions.
- *
- * The character owns both the AbilitySystemComponent (ASC) and AttributeSet, so
- * the character is both GAS OwnerActor and AvatarActor. This keeps ownership
- * simple while attributes and abilities live only as long as the pawn.
  */
 UCLASS()
 class ASHENOATH_API AAshenOathPlayerCharacter : public ACharacter, public IAbilitySystemInterface
@@ -45,7 +38,7 @@ public:
 	// Read-only access to the Character's GAS-backed gameplay attributes.
 	const UAshenOathAttributeSet* GetAttributeSet() const;
 
-	// Convert 2D movement input from camera space into world-space movement directions, then pass it to CharacterMovement.
+	// Converts camera-space input into world-space directions for CharacterMovement.
 	void RequestMove(const FVector2D& MovementIntent, float ReferenceYaw);
 
 	// True means GAS accepted the activation request. It does not mean the
@@ -53,7 +46,9 @@ public:
 	bool RequestLightAttack();
 
 	// Selects the forward/backward AbilitySpec and freezes a world-space direction.
-	ECombatActionStartResult RequestDodge(const FVector2D& MovementIntent);
+	// True means GAS accepted the activation request; completion remains asynchronous.
+	bool RequestDodge(const FVector2D& MovementIntent);
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -61,24 +56,19 @@ protected:
 	virtual void PossessedBy(AController* NewController) override;
 
 private:
-	// Constructor-created subobjects share the character's lifetime. UPROPERTY/TObjectPtr
-	// keeps them visible to reflection and tracked by Unreal's object/GC system.
-
 	// Core GAS component owned by this Character for its lifetime.
-	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category = "AshenOath|AbilitySystem",meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AshenOath|AbilitySystem",
+		meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
 
-	// Stores gameplay attributes such as Health
-	UPROPERTY(VisibleAnywhere,Category = "AshenOath|AbilitySystem")
+	// Stores GAS-backed attributes for this Character.
+	UPROPERTY(VisibleAnywhere, Category = "AshenOath|AbilitySystem")
 	TObjectPtr<UAshenOathAttributeSet> AttributeSet;
-
-	// Retained only as the stage-D migration fallback; new combat requests use GAS.
-	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category = "AshenOath|Combat",meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UCombatActionComponent> CombatActionComponent;
 
 	// Owns weapon tracing, hit-window state, and per-window hit deduplication.
 	// A light-attack Ability starts and ends one identity-bound detection session.
-	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category = "AshenOath|Combat",meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AshenOath|Combat",
+		meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UCombatMeleeComponent> CombatMeleeComponent;
 
 	// Receives all incoming damage attempts and applies the shared
@@ -97,8 +87,8 @@ private:
 		meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UAshenOathStaminaRecoveryComponent> StaminaRecoveryComponent;
 
-	// Data definition used when requesting the player's light attack.
-	UPROPERTY(EditDefaultsOnly,Category = "AshenOath|Combat")
+	// Immutable configuration supplied to the granted light-attack AbilitySpec.
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat")
 	TObjectPtr<UCombatActionData> LightAttackAction;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Abilities")
@@ -124,11 +114,12 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Stamina")
 	TSubclassOf<UGameplayEffect> StaminaRecoveryEffect;
 
-	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Stamina",meta = (ClampMin = "0.0", Units = "s"))
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Stamina",
+		meta = (ClampMin = "0.0", Units = "s"))
 	float StaminaRecoveryDelay = 1.0f;
 
 	// GameplayEffect class used to initialize the Character's starting attributes.
-	UPROPERTY(EditDefaultsOnly,Category = "AshenOath|AbilitySystem")
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|AbilitySystem")
 	TSubclassOf<UGameplayEffect> InitialAttributesEffect;
 
 	UPROPERTY(VisibleAnywhere, Category = "AshenOath|Camera")
@@ -140,15 +131,13 @@ private:
 	// PossessedBy may run again after repossession; initial stats are applied only once.
 	bool bInitialAttributesApplied = false;
 	FDelegateHandle DeadStateChangedHandle;
+	FDelegateHandle MovementLockedStateChangedHandle;
 
 	// Applies the startup GameplayEffect that establishes initial attribute values.
 	void ApplyInitialAttributes();
 
-	// Shared character-level state gate before delegating to the generic action component.
-	ECombatActionStartResult TryStartCombatAction(const UCombatActionData* ActionData,
-	                                             const FVector& MovementDirection = FVector::ZeroVector);
-
 	void HandleDeadStateChanged(const FGameplayTag Tag, int32 NewCount);
+	void HandleMovementLockedStateChanged(const FGameplayTag Tag, int32 NewCount);
 
 	void GrantConfiguredAbilities();
 	void GrantAbilityIfNeeded(
@@ -158,7 +147,4 @@ private:
 	);
 
 	void CancelCombatAbilities();
-
-	// Used only to keep the stage-D legacy fallback mutually exclusive.
-	bool IsCombatAbilityActive() const;
 };

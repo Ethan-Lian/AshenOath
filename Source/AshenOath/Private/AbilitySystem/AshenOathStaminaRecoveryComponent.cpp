@@ -26,22 +26,25 @@ void UAshenOathStaminaRecoveryComponent::NotifyStaminaCostCommitted()
 
 void UAshenOathStaminaRecoveryComponent::StopRecovery()
 {
+	++RecoveryGeneration;
+
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(RecoveryTimer);
 	}
 
-	if (ActiveRecoveryEffect.IsValid())
+	const FActiveGameplayEffectHandle EffectToRemove = ActiveRecoveryEffect;
+	RecoveryTimer.Invalidate();
+	ActiveRecoveryEffect = FActiveGameplayEffectHandle();
+
+	if (EffectToRemove.IsValid())
 	{
 		if (UAbilitySystemComponent* AbilitySystemComponent =
 			ResolveAbilitySystemComponent())
 		{
-			AbilitySystemComponent->RemoveActiveGameplayEffect(ActiveRecoveryEffect);
+			AbilitySystemComponent->RemoveActiveGameplayEffect(EffectToRemove);
 		}
 	}
-
-	RecoveryTimer.Invalidate();
-	ActiveRecoveryEffect = FActiveGameplayEffectHandle();
 }
 
 bool UAshenOathStaminaRecoveryComponent::HasPendingOrActiveRecovery() const
@@ -108,6 +111,7 @@ void UAshenOathStaminaRecoveryComponent::RestartRecovery()
 void UAshenOathStaminaRecoveryComponent::StartRecovery()
 {
 	RecoveryTimer.Invalidate();
+	const uint32 StartingGeneration = RecoveryGeneration;
 	UAbilitySystemComponent* AbilitySystemComponent = ResolveAbilitySystemComponent();
 	AActor* Owner = GetOwner();
 	const UGameplayEffect* RecoveryEffect = ConfiguredRecoveryEffect
@@ -135,7 +139,26 @@ void UAshenOathStaminaRecoveryComponent::StartRecovery()
 
 	if (Spec.IsValid())
 	{
-		ActiveRecoveryEffect =
+		const FActiveGameplayEffectHandle AppliedEffect =
 			AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
+
+		// Effect application broadcasts synchronously. A callback may stop or
+		// restart recovery before the application call returns.
+		const bool bStillOwnsThisStart =
+			RecoveryGeneration == StartingGeneration &&
+			ResolveAbilitySystemComponent() == AbilitySystemComponent &&
+			IsValid(Owner) &&
+			!Owner->IsActorBeingDestroyed() &&
+			!AbilitySystemComponent->HasMatchingGameplayTag(
+				AshenOathGameplayTags::State_Dead);
+
+		if (AppliedEffect.WasSuccessfullyApplied() && bStillOwnsThisStart)
+		{
+			ActiveRecoveryEffect = AppliedEffect;
+		}
+		else if (AppliedEffect.IsValid())
+		{
+			AbilitySystemComponent->RemoveActiveGameplayEffect(AppliedEffect);
+		}
 	}
 }

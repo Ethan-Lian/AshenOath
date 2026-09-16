@@ -64,5 +64,4 @@ private:
 
 	TWeakObjectPtr<UCombatMeleeComponent> ActiveMeleeComponent;
 	FCombatMeleeSessionHandle ActiveMeleeSession;
-
 };

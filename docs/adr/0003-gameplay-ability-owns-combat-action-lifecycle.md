@@ -1,6 +1,6 @@
 # ADR-0003：GameplayAbility 拥有战斗动作生命周期
 
-状态：已采用。记录日期：2026-09-14。阶段 B 已迁移单段轻击，阶段 C 已迁移闪避、Defense 与恢复；阶段 D 删除旧路径。
+状态：已采用。记录日期：2026-09-14。阶段 D 已将玩家动作入口完全切换到 GAS，并删除旧路径。
 
 ## 背景
 
@@ -14,7 +14,7 @@
 
 闪避由 `UAshenOathDodgeAbility` 协调 Montage、`UAbilityTask_ApplyCombatMovement` 和 `UCombatDefenseComponent`。位移 Task 只拥有本次移动接管，Defense 只拥有窗口时间、来源句柄和自己施加的 Tag；`UAshenOathStaminaRecoveryComponent` 独立拥有跨动作的延迟与恢复 Effect。轻击和闪避通过薄 `UAshenOathCombatAbility` 共享费用事务，不共享各自流程。
 
-`FGameplayAbilitySpecHandle` 仅标识授予记录，不代表某次执行。旧回调隔离使用 UE 的 Montage 实例 ID；目标侧伤害请求暂时保留独立 AttackInstanceId/HitId 契约。
+`FGameplayAbilitySpecHandle` 仅标识授予记录，不代表某次执行。旧回调隔离使用 UE 的 Montage 实例 ID；目标侧伤害请求不携带没有消费者的动作执行编号，窗口内去重由 Melee 自己的会话状态完成。
 
 ## 取舍
 
@@ -23,7 +23,7 @@
 | 复用 GAS 的激活、互斥、取消和 Task 清理 | 不再维护完整的自定义动作状态机；具体 Ability 必须严格处理同步取消和每条结束路径 |
 | Melee 会话与动画播放实例绑定 | 旧 Notify 无法污染下一次攻击；动画适配层需要读取 UE 5.8 的 Notify/Montage 上下文 |
 | ActionData 继续作为配置单一来源 | 迁移期不重复配置 Cost/伤害；Ability 仍需从 Spec SourceObject 解析并验证该数据 |
-| 分阶段保留旧 ActionComponent | 阶段 C 完成后只作为未启用的对照实现；阶段 D 仍需删除类、组件和失效接口并验证资产/Cook |
+| 删除旧 ActionComponent 与同步拒绝结果 | 玩家动作只有 GAS 一套生命周期；请求入口只报告激活是否被接受，完成结果由实际 Ability 执行决定 |
 | 当前采用 `ServerOnly` | 符合现有权威单机范围；未来实现联机预测时必须重新设计费用、命中和回滚契约 |
 
 模块依赖保持 `AshenOath → AshenOathCombat`。Combat 组件不引用具体角色、项目 Tag 或 UI。

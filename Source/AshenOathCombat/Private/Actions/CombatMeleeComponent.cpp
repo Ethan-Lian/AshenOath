@@ -80,7 +80,6 @@ FCombatMeleeSessionHandle UCombatMeleeComponent::BeginSession(
 	TSubclassOf<UGameplayEffect> DamageEffect,
 	const float TraceRadius,
 	const TArray<FName>& TraceBones,
-	const bool bCanTriggerPerfectDodge,
 	USkeletalMeshComponent* SourceMesh,
 	UAnimInstance* SourceAnimInstance,
 	UAnimMontage* SourceMontage,
@@ -123,7 +122,6 @@ FCombatMeleeSessionHandle UCombatMeleeComponent::BeginSession(
 	ActiveDamageEffect = DamageEffect;
 	ActiveMeleeTraceRadius = TraceRadius;
 	ActiveMeleeTraceBones = TraceBones;
-	bActiveDamageCanTriggerPerfectDodge = bCanTriggerPerfectDodge;
 
 	return SessionHandle;
 }
@@ -154,8 +152,7 @@ void UCombatMeleeComponent::BeginHitWindowFromAnimation(
 	USkeletalMeshComponent* MeshComponent,
 	UAnimSequenceBase* Animation,
 	const int32 MontageInstanceId,
-	const int32 NotifyInstanceId,
-	const int32 DamageSegmentId)
+	const int32 NotifyInstanceId)
 {
 	if (!IsAnimationSignalOwned(
 			MeshComponent,
@@ -166,7 +163,7 @@ void UCombatMeleeComponent::BeginHitWindowFromAnimation(
 		return;
 	}
 
-	BeginHitWindow(GetActiveSessionHandle(), NotifyInstanceId, DamageSegmentId);
+	BeginHitWindow(GetActiveSessionHandle(), NotifyInstanceId);
 }
 
 void UCombatMeleeComponent::EndHitWindowFromAnimation(
@@ -207,13 +204,11 @@ void UCombatMeleeComponent::TickHitWindowFromAnimation(
 
 void UCombatMeleeComponent::BeginHitWindow(
 	const FCombatMeleeSessionHandle& SessionHandle,
-	const int32 NotifyInstanceId,
-	const int32 DamageSegmentId)
+	const int32 NotifyInstanceId)
 {
 	if (!IsSessionActive(SessionHandle) ||
 		HasActiveHitWindow() ||
-		NotifyInstanceId == INDEX_NONE ||
-		DamageSegmentId <= 0)
+		NotifyInstanceId == INDEX_NONE)
 	{
 		return;
 	}
@@ -245,7 +240,6 @@ void UCombatMeleeComponent::BeginHitWindow(
 	}
 
 	ActiveHitWindowNotifyInstanceId = NotifyInstanceId;
-	ActiveDamageSegmentId = DamageSegmentId;
 	HitActorsInCurrentWindow.Reset();
 }
 
@@ -364,13 +358,11 @@ void UCombatMeleeComponent::ResetSession()
 	ActiveDamageEffect = nullptr;
 	ActiveMeleeTraceRadius = 0.0f;
 	ActiveMeleeTraceBones.Reset();
-	bActiveDamageCanTriggerPerfectDodge = false;
 }
 
 void UCombatMeleeComponent::ResetHitWindow()
 {
 	ActiveHitWindowNotifyInstanceId = INDEX_NONE;
-	ActiveDamageSegmentId = 0;
 	PreviousMeleeTraceLocations.Reset();
 	HitActorsInCurrentWindow.Reset();
 }
@@ -451,19 +443,14 @@ void UCombatMeleeComponent::SubmitMeleeHit(
 		return;
 	}
 
-	// Register before applying the effect because GAS callbacks are synchronous
-	// and may re-enter combat code.
+	// Claim the actor before applying damage because GAS callbacks can
+	// synchronously re-enter combat code and submit the same target again.
 	HitActorsInCurrentWindow.Add(HitActorKey);
 
-	// Data flows from the session snapshot and collision result into a neutral
-	// attempt. Target-side validation and GAS application happen downstream.
 	FCombatDamageAttempt DamageAttempt;
 	DamageAttempt.SourceActor = Character;
 	DamageAttempt.DamageEffect = ActiveDamageEffect;
-	DamageAttempt.AttackInstanceId = SessionHandle.Value;
-	DamageAttempt.HitId = ActiveDamageSegmentId;
 	DamageAttempt.HitTimeSeconds = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
-	DamageAttempt.bCanTriggerPerfectDodge = bActiveDamageCanTriggerPerfectDodge;
 
 	DamageComponent->ApplyDamageAttempt(DamageAttempt);
 }
@@ -471,8 +458,7 @@ void UCombatMeleeComponent::SubmitMeleeHit(
 bool UCombatMeleeComponent::HasActiveHitWindow() const
 {
 	return ActiveSessionInstanceId != 0 &&
-		ActiveHitWindowNotifyInstanceId != INDEX_NONE &&
-		ActiveDamageSegmentId > 0;
+		ActiveHitWindowNotifyInstanceId != INDEX_NONE;
 }
 
 bool UCombatMeleeComponent::OwnsHitWindow(

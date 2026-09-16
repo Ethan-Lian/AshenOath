@@ -45,14 +45,21 @@ public:
 
 private:
 	void BeginMovementControl();
+	
 	void EndMovementControl();
+	
 	void RestoreRootMotionMode();
+	
 	void FailTask();
 
 	TWeakObjectPtr<ACharacter> Character;
+	
 	TWeakObjectPtr<UCharacterMovementComponent> MovementComponent;
+	
 	TWeakObjectPtr<UAnimInstance> AnimInstance;
+	
 	FVector MovementDirection = FVector::ZeroVector;
+	
 	float MovementDistance = 0.0f;
 	float MovementStartOffset = 0.0f;
 	float MovementDuration = 0.0f;
@@ -61,6 +68,7 @@ private:
 	uint8 SavedMovementMode = 0;
 	uint8 SavedCustomMovementMode = 0;
 	uint8 SavedRootMotionMode = 0;
+	
 	bool bMovementControlActive = false;
 	bool bRootMotionModeOverridden = false;
 	bool bMovementFinished = false;

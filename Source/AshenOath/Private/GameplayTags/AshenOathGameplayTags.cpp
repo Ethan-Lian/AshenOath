@@ -32,6 +32,12 @@ namespace AshenOathGameplayTags
 	);
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		State_MovementLocked,
+		"State.MovementLocked",
+		"The combatant cannot accept player-directed movement."
+	);
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
 		State_Staggered,
 		"State.Staggered",
 		"The combatant is staggered and cannot start normal actions."

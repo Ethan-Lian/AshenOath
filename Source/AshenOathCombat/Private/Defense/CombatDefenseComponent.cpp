@@ -93,7 +93,7 @@ void UCombatDefenseComponent::EndDodgeWindow(const FCombatDefenseWindowHandle Ha
 	}
 
 	// Revoke ownership before removing loose tags because GAS tag delegates can
-	// execute immediately and attempt another cleanup.
+	// run synchronously and attempt another cleanup.
 	CurrentWindow.Reset();
 	CurrentWindowSource.Reset();
 	ConfiguredWindowTags.Reset();
@@ -173,9 +173,25 @@ void UCombatDefenseComponent::ActivateWindowTags()
 
 	if (UAbilitySystemComponent* AbilitySystemComponent = ResolveAbilitySystemComponent())
 	{
-		// Record the exact count owned here before broadcasting tag changes.
-		AppliedWindowTags = ConfiguredWindowTags;
-		AbilitySystemComponent->AddLooseGameplayTags(ConfiguredWindowTags);
+		const FCombatDefenseWindowHandle WindowToActivate = CurrentWindow;
+		const FGameplayTagContainer TagsToApply = ConfiguredWindowTags;
+
+		for (const FGameplayTag& Tag : TagsToApply)
+		{
+			if (!OwnsWindow(WindowToActivate))
+			{
+				return;
+			}
+
+			// Record this exact count before its synchronous tag notification.
+			AppliedWindowTags.AddTag(Tag);
+			AbilitySystemComponent->AddLooseGameplayTag(Tag);
+
+			if (!OwnsWindow(WindowToActivate))
+			{
+				return;
+			}
+		}
 	}
 }
 

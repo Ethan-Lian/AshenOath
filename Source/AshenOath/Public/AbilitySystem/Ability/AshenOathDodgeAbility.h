@@ -10,7 +10,9 @@ class UAbilityTask_PlayMontageAndWait;
 class UCombatActionData;
 class UCombatDefenseComponent;
 
-/** Owns one forward or backward dodge execution. */
+/**
+ * Coordinates one dodge execution across animation, defense, and movement tasks.
+ */
 UCLASS()
 class ASHENOATH_API UAshenOathDodgeAbility : public UAshenOathCombatAbility
 {
@@ -19,10 +21,8 @@ class ASHENOATH_API UAshenOathDodgeAbility : public UAshenOathCombatAbility
 public:
 	UAshenOathDodgeAbility();
 
-	// The character converts input into world space immediately before asking
-	// GAS to activate this granted spec. ActivateAbility freezes its own copy.
-	void SetMovementDirectionForNextActivation(const FVector& WorldDirection);
-	void ClearPendingMovementDirection();
+	/** Attempts to activate this granted spec using the supplied world-space direction. */
+	bool TryActivateWithMovementDirection(const FVector& WorldDirection);
 
 #if WITH_DEV_AUTOMATION_TESTS
 	// Simple automation tests advance a transient UWorld multiple times inside
@@ -83,7 +83,12 @@ private:
 	TObjectPtr<UAbilityTask_ApplyCombatMovement> MovementTask;
 
 	TWeakObjectPtr<UCombatDefenseComponent> ActiveDefenseComponent;
+
 	FCombatDefenseWindowHandle ActiveDefenseWindow;
+
+	// Exists only while TryActivateAbility synchronously evaluates this request.
 	FVector PendingMovementDirection = FVector::ZeroVector;
+
+	// Frozen for the active execution and cleared by EndAbility.
 	FVector ActiveMovementDirection = FVector::ZeroVector;
 };

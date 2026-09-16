@@ -62,10 +62,16 @@ void UAbilityTask_ApplyCombatMovement::Activate()
 	Character = AvatarCharacter;
 	MovementComponent = Movement;
 	AnimInstance = AvatarAnimInstance;
-	SavedRootMotionMode =
-		static_cast<uint8>(AvatarAnimInstance->RootMotionMode.GetValue());
-	AvatarAnimInstance->SetRootMotionMode(ERootMotionMode::IgnoreRootMotion);
+
+	SavedRootMotionMode = static_cast<uint8>(AvatarAnimInstance->RootMotionMode.GetValue());
 	bRootMotionModeOverridden = true;
+	AvatarAnimInstance->SetRootMotionMode(ERootMotionMode::IgnoreRootMotion);
+
+	if (IsFinished())
+	{
+		return;
+	}
+
 	SetWaitingOnAvatar();
 
 	// Handle zero-offset movement without waiting for the following frame.
@@ -102,6 +108,11 @@ void UAbilityTask_ApplyCombatMovement::TickTask(const float DeltaTime)
 	{
 		BeginMovementControl();
 
+		if (IsFinished())
+		{
+			return;
+		}
+
 		if (!bMovementControlActive)
 		{
 			FailTask();
@@ -117,6 +128,11 @@ void UAbilityTask_ApplyCombatMovement::TickTask(const float DeltaTime)
 			true,
 			Hit
 		);
+
+		if (IsFinished())
+		{
+			return;
+		}
 
 		// SafeMoveUpdatedComponent applies only the collision-valid portion. Keep
 		// advancing the timeline so floor contact is not mistaken for a wall; an
@@ -159,10 +175,24 @@ void UAbilityTask_ApplyCombatMovement::BeginMovementControl()
 
 	SavedMovementMode = static_cast<uint8>(Movement->MovementMode.GetValue());
 	SavedCustomMovementMode = Movement->CustomMovementMode;
-	Movement->StopMovementImmediately();
-	AvatarCharacter->ConsumeMovementInputVector();
-	Movement->SetMovementMode(MOVE_None);
+	// Mark ownership before calls that can synchronously notify gameplay code.
+	// If such a callback ends the Ability, OnDestroy can now restore this state.
 	bMovementControlActive = true;
+	Movement->StopMovementImmediately();
+
+	if (IsFinished())
+	{
+		return;
+	}
+
+	AvatarCharacter->ConsumeMovementInputVector();
+
+	if (IsFinished())
+	{
+		return;
+	}
+
+	Movement->SetMovementMode(MOVE_None);
 }
 
 void UAbilityTask_ApplyCombatMovement::EndMovementControl()
@@ -213,5 +243,8 @@ void UAbilityTask_ApplyCombatMovement::FailTask()
 		OnFailed.Broadcast();
 	}
 
-	EndTask();
+	if (!IsFinished())
+	{
+		EndTask();
+	}
 }
