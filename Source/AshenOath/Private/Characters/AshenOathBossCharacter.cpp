@@ -1,7 +1,11 @@
 ﻿#include "Characters/AshenOathBossCharacter.h"
 
+#include "AIController.h"
 #include "AbilitySystemComponent.h"
+#include "AbilitySystem/Ability/AshenOathBossSingleSwingAbility.h"
 #include "AbilitySystem/AshenOathAttributeSet.h"
+#include "Actions/CombatActionData.h"
+#include "Actions/CombatMeleeComponent.h"
 #include "Components/StateTreeComponent.h"
 #include "Damage/CombatDamageComponent.h"
 #include "Game/AshenOathGameMode.h"
@@ -10,6 +14,9 @@
 
 AAshenOathBossCharacter::AAshenOathBossCharacter()
 {
+	AIControllerClass = AAIController::StaticClass();
+	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
+
 	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 
 	AbilitySystemComponent->SetIsReplicated(false);
@@ -20,6 +27,9 @@ AAshenOathBossCharacter::AAshenOathBossCharacter()
 
 	CombatDamageComponent = CreateDefaultSubobject<UCombatDamageComponent>(TEXT("CombatDamageComponent"));
 	CombatDamageComponent->ConfigureInvulnerabilityTag(AshenOathGameplayTags::State_Invulnerable);
+	CombatMeleeComponent = CreateDefaultSubobject<UCombatMeleeComponent>(TEXT("CombatMeleeComponent"));
+
+	SingleSwingAbilityClass = UAshenOathBossSingleSwingAbility::StaticClass();
 
 	StateTreeComponent->SetStartLogicAutomatically(false);
 }
@@ -33,9 +43,18 @@ void AAshenOathBossCharacter::BeginPlay()
 	check(StateTreeComponent);
 
 	AbilitySystemComponent->InitAbilityActorInfo(this, this);
+	AbilityEndedDelegateHandle = AbilitySystemComponent->OnAbilityEnded.AddUObject(
+		this,
+		&AAshenOathBossCharacter::HandleAbilityEnded
+	);
 	ApplyInitialAttributes();
 
 	if (!bInitialAttributesApplied)
+	{
+		return;
+	}
+
+	if (!GrantConfiguredAbilities())
 	{
 		return;
 	}
@@ -54,11 +73,20 @@ void AAshenOathBossCharacter::BeginPlay()
 
 void AAshenOathBossCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-
 	if (StateTreeComponent)
 	{
 		StateTreeComponent->StopLogic(TEXT("Boss EndPlay"));
 	}
+
+	if (AbilitySystemComponent && AbilityEndedDelegateHandle.IsValid())
+	{
+		AbilitySystemComponent->OnAbilityEnded.Remove(AbilityEndedDelegateHandle);
+		AbilityEndedDelegateHandle.Reset();
+	}
+
+	CancelCombatAbilities();
+	SingleSwingAbilitySpecHandle = FGameplayAbilitySpecHandle();
+	SingleSwingEndedEvent.Clear();
 
 	// unregister boss so the UI can remove the corresponding boss UI.
 	if (UWorld* World = GetWorld())
@@ -112,4 +140,87 @@ UAbilitySystemComponent* AAshenOathBossCharacter::GetAbilitySystemComponent() co
 const UAshenOathAttributeSet* AAshenOathBossCharacter::GetAttributeSet() const
 {
 	return AttributeSet;
+}
+
+bool AAshenOathBossCharacter::RequestSingleSwing()
+{
+	return AbilitySystemComponent &&
+		SingleSwingAbilitySpecHandle.IsValid() &&
+		AbilitySystemComponent->TryActivateAbility(SingleSwingAbilitySpecHandle);
+}
+
+bool AAshenOathBossCharacter::IsSingleSwingActive() const
+{
+	const FGameplayAbilitySpec* Spec = AbilitySystemComponent && SingleSwingAbilitySpecHandle.IsValid()
+		? AbilitySystemComponent->FindAbilitySpecFromHandle(SingleSwingAbilitySpecHandle)
+		: nullptr;
+
+	return Spec && Spec->IsActive();
+}
+
+void AAshenOathBossCharacter::CancelSingleSwing()
+{
+	if (AbilitySystemComponent && IsSingleSwingActive())
+	{
+		AbilitySystemComponent->CancelAbilityHandle(SingleSwingAbilitySpecHandle);
+	}
+}
+
+#if WITH_DEV_AUTOMATION_TESTS
+void AAshenOathBossCharacter::GrantSingleSwingForTesting(UCombatActionData* ActionData)
+{
+	if (!IsValid(ActionData) || SingleSwingAbilitySpecHandle.IsValid())
+	{
+		return;
+	}
+
+	SingleSwingAction = ActionData;
+	GrantConfiguredAbilities();
+}
+#endif
+
+bool AAshenOathBossCharacter::GrantConfiguredAbilities()
+{
+	if (SingleSwingAbilitySpecHandle.IsValid())
+	{
+		return true;
+	}
+
+	if (!AbilitySystemComponent ||
+		!SingleSwingAbilityClass ||
+		!SingleSwingAction)
+	{
+		return false;
+	}
+
+	SingleSwingAbilitySpecHandle = AbilitySystemComponent->GiveAbility(
+		FGameplayAbilitySpec(
+			SingleSwingAbilityClass,
+			1,
+			INDEX_NONE,
+			SingleSwingAction
+		)
+	);
+
+	return SingleSwingAbilitySpecHandle.IsValid();
+}
+
+void AAshenOathBossCharacter::CancelCombatAbilities()
+{
+	if (!AbilitySystemComponent)
+	{
+		return;
+	}
+
+	FGameplayTagContainer AbilityTags;
+	AbilityTags.AddTag(AshenOathGameplayTags::Ability_Action);
+	AbilitySystemComponent->CancelAbilities(&AbilityTags);
+}
+
+void AAshenOathBossCharacter::HandleAbilityEnded(const FAbilityEndedData& EndedData)
+{
+	if (EndedData.AbilitySpecHandle == SingleSwingAbilitySpecHandle)
+	{
+		SingleSwingEndedEvent.Broadcast(EndedData.bWasCancelled);
+	}
 }

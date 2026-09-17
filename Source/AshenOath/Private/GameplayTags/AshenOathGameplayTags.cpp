@@ -19,6 +19,12 @@ namespace AshenOathGameplayTags
 		"Ability.Action.Dodge",
 		"Identifies a combat dodge ability."
 	);
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Action_BossSingleSwing,
+		"Ability.Action.BossSingleSwing",
+		"Identifies the Boss single-swing combat ability."
+	);
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
 		State_Dead,
 		"State.Dead",

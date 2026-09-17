@@ -1,6 +1,6 @@
 # 战斗动作与伤害
 
-当前实现由 GameplayAbility 驱动单段轻击和玩家前/后闪避。共享 `UCombatActionData` 只保存配置，不保存执行状态；旧 `UCombatActionComponent` 及其执行句柄已经删除。
+当前实现由 GameplayAbility 驱动玩家单段轻击、前/后闪避和 Boss 单次挥击。共享 `UCombatActionData` 只保存配置，不保存执行状态；旧 `UCombatActionComponent` 及其执行句柄已经删除。
 
 ## 职责边界
 
@@ -9,6 +9,7 @@
 | `UAshenOathCombatAbility` | 共享动作互斥、ActionData Cost 检查/应用和成功消耗通知；不包含攻击或闪避分支 |
 | `UAshenOathLightAttackAbility` | 拥有一次轻击的激活、互斥、Montage Task、Cost 提交、Melee 会话和统一结束流程 |
 | `UAshenOathDodgeAbility` | 拥有一次闪避的方向快照、Montage、Cost、位移 Task、Defense 窗口和统一结束流程 |
+| `UAshenOathBossSingleSwingAbility` | 拥有一次 Boss 挥击的 Montage、Melee 会话、Cost 提交与统一结束流程；不决定接近、恢复或下一招 |
 | `UAbilityTask_ApplyCombatMovement` | 按动作时间执行 Sweep 位移，接管并恢复 MovementMode/RootMotionMode |
 | `UCombatDefenseComponent` | 保存闪避窗口的世界时间和来源句柄，仅增加/移除自己持有的窗口 Tag |
 | `UAshenOathStaminaRecoveryComponent` | 保存跨动作的延迟计时器和恢复 Effect；成功消耗重启，拒绝请求不触碰 |
@@ -31,7 +32,9 @@
 
 无 Cost 的动作可免费执行。资源不足在播放前拒绝；Montage 或 Cost 应用失败会停止本次执行且不留下 Melee 状态；成功扣费后的中断不退款。`TryActivateAbility` 的返回值只表示 GAS 是否接受请求，不代表整个动画/费用事务已经完成。
 
-当前项目是权威单机执行，没有预测契约；两种战斗 Ability 都使用 `ServerOnly` 执行策略。
+当前项目是权威单机执行，没有预测契约；这些战斗 Ability 都使用 `ServerOnly` 执行策略。
+
+Boss 单次挥击复用同一启动事务，但由 StateTree 经 Boss Character 的窄入口请求。Task 在请求前订阅该 AbilitySpec 的结束事件；请求拒绝立即失败，正常 Montage 完成才成功，取消或中断失败。Task 退出先解除监听，再取消仍活动的挥击，因此停止 StateTree 不会遗留 Melee 会话，也不会让取消回调重入已经退出的 Task。
 
 ## Notify 与检测会话
 

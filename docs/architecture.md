@@ -32,6 +32,9 @@ flowchart TD
     P -->|初始化 / 读取状态 Tag| GAS
     B[Boss Character] -->|初始化| BGAS[Boss ASC / AttributeSet]
     B -->|显式 StartLogic / StopLogic| ST[StateTree Component]
+    ST -->|接近 / 请求单次挥击 / 恢复| B
+    BGAS --> BATTACK[Boss SingleSwing GameplayAbility]
+    BATTACK -->|Montage 与会话| MELEE
 ```
 
 | 对象 | 持有或管理的内容 | 边界 |
@@ -39,7 +42,7 @@ flowchart TD
 | GameMode | 默认 Pawn/Controller 类选择 | 原生类提供默认值，蓝图子类配置资源；当前无局内流程协调 |
 | PlayerController | 自身 InputComponent 的绑定、本地 Mapping Context 注册记录、最近移动意图 | 每次输入取当前 Pawn；只把闪避意图交给 Character，不实现位移积分或修改属性 |
 | Player Character | ASC、AttributeSet、镜头和 Combat 组件；使用继承的 CharacterMovement | 验证角色状态、选择玩家动作数据，将相对视角意图转为世界方向；不直接写战斗数值 |
-| Boss Character | ASC、AttributeSet、StateTreeComponent | 协调初始化和退出顺序；尚不承担实际选招 |
+| Boss Character | ASC、AttributeSet、StateTreeComponent、单次挥击 AbilitySpec | 协调初始化和退出顺序；向 StateTree 提供请求、取消和对应 Ability 结束通知，不播放动画或执行选招评分 |
 | AttributeSet | Health、MaxHealth、Stamina、MaxStamina | 维护数值范围；Health 归零目前不会自动生成死亡状态 |
 | Combat GameplayAbility 基类 | 动作互斥、ActionData Cost 检查/应用与成功消耗通知 | 只共享 GAS 事务，不编排具体攻击或闪避 |
 | LightAttack GameplayAbility | 一次轻击的激活互斥、Montage Task、Cost 提交及 Melee 会话协调 | Montage 启动后才提交费用；结束、中断、失败统一经 `EndAbility` 释放会话 |
@@ -60,6 +63,8 @@ flowchart TD
 **轻击到伤害**：Attack Input → Character 请求已授予的轻击 Ability → Montage Task 确认播放 → Melee 保存配置与播放实例快照 → GAS 提交一次 Cost → Notify 携带 Montage 实例 ID 开窗/扫掠 → 目标 CombatDamage 经 GAS 应用伤害。任何失败或中断先释放 Melee 会话，再由 Task 停止 Montage。
 
 **闪避到清理**：Dodge Input → Character 选择前/后 AbilitySpec 并冻结世界方向 → Dodge Ability 启动 Montage → 提交一次 Cost → Defense 建立窗口、Movement Task 执行 Sweep 位移 → `EndAbility` 释放 Defense，GAS 销毁 Task 并恢复移动/根位移模式。成功消耗独立通知 StaminaRecovery 重启延迟；拒绝请求不影响已有恢复。详见 [战斗动作与伤害](systems/combat-actions.md)。
+
+**Boss 最小循环**：StateTree 的 Approach Task 通过 AIController 接近本地玩家 → SingleSwing Task 先监听对应 AbilitySpec 的结束，再调用 Boss 请求入口 → Boss SingleSwing Ability 播放项目 Montage、建立 Melee 会话并等待动画完成 → Task 按正常完成或取消得到成功/失败 → Recovery Task 保留无伤害间隔后重新接近。树退出时 Task 先解除监听并只取消自己等待的单次挥击。
 
 **初始化到退出**：玩家随占有刷新 GAS 上下文；Boss 在进入游戏时初始化 GAS，再调用 StateTree 启动。Boss 退出先停树，再清理 GAS 上下文，使树的退出逻辑仍可使用 GAS。
 

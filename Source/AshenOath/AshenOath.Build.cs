@@ -25,6 +25,7 @@ public class AshenOath : ModuleRules
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{
+				"AIModule",
 				"GameplayTasks",
 				"StateTreeModule",
 				"GameplayStateTreeModule"
