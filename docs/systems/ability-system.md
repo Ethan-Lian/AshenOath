@@ -9,7 +9,7 @@
 | 入口 | 当前责任 |
 |---|---|
 | [Player Character](../../Source/AshenOath/Private/Characters/AshenOathPlayerCharacter.cpp) | 构造 ASC/AttributeSet、Defense 与耐力恢复等组件；在 `PossessedBy` 刷新 ActorInfo 并授予 Ability，在 BeginPlay 配置恢复与闪避窗口 Tag 并监听 Dead |
-| [Boss Character](../../Source/AshenOath/Private/Characters/AshenOathBossCharacter.cpp) | 构造 ASC/AttributeSet/StateTreeComponent，协调 GAS 与树的启动、退出 |
+| [Boss Character](../../Source/AshenOath/Private/Characters/AshenOathBossCharacter.cpp) | 构造 ASC/AttributeSet/StateTreeComponent，授予单次挥击 Ability，并协调 GAS 与树的启动、退出 |
 | [AttributeSet](../../Source/AshenOath/Private/AbilitySystem/AshenOathAttributeSet.cpp) | 维护 Health/MaxHealth、Stamina/MaxStamina 的范围 |
 | [Native Gameplay Tags](../../Source/AshenOath/Private/GameplayTags/AshenOathGameplayTags.cpp) | 注册 `State.Dead`、`State.Invulnerable`、`State.Staggered` |
 
@@ -44,13 +44,16 @@ EndPlay
 BeginPlay
   → InitAbilityActorInfo(this, this)
   → ApplyInitialAttributes()
+  → 授予配置了 ActionData 的 Boss 单次挥击 Ability
+  → 注册到 GameMode
   → StateTreeComponent.StartLogic()
 EndPlay
   → StateTreeComponent.StopLogic()
+  → 解除 Ability 结束监听并取消残留战斗 Ability
   → ASC.ClearActorInfo()
 ```
 
-StateTree 关闭自动启动，由 Boss 显式控制顺序：进入逻辑前建立 GAS 上下文，退出逻辑执行后再清理。当前启动流程不以初始 Effect 成功为前提，也不检查树是否实际运行；有效 Effect 和树资产仍是配置要求。
+StateTree 关闭自动启动，由 Boss 显式控制顺序：初始属性、单次挥击配置和 GameMode 注册成功后才启动；退出时先停树，使活动 Task 能解除监听并取消自己等待的挥击，再清理 ASC。Boss 将 `TryActivateAbility` 的接受结果返回给 Task，并只转发该 AbilitySpec 的结束结果，避免其他 Ability 或旧通知结束当前 Task。有效初始 Effect、ActionData 和树资产都是运行配置要求。
 
 ### 初始 Effect 的应用
 

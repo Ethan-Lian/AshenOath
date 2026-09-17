@@ -3,13 +3,18 @@
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
 #include "GameFramework/Character.h"
+#include "GameplayAbilitySpecHandle.h"
 #include "AshenOathBossCharacter.generated.h"
 
 class UAshenOathAttributeSet;
 class UAbilitySystemComponent;
 class UGameplayEffect;
 class UStateTreeComponent;
+class UCombatActionData;
 class UCombatDamageComponent;
+class UCombatMeleeComponent;
+class UAshenOathBossSingleSwingAbility;
+struct FAbilityEndedData;
 
 /**
  * AI-side GAS host.
@@ -25,9 +30,26 @@ class ASHENOATH_API AAshenOathBossCharacter : public ACharacter, public IAbility
 public:
 	AAshenOathBossCharacter();
 
+	DECLARE_MULTICAST_DELEGATE_OneParam(FSingleSwingEndedEvent, bool);
+
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 	
 	const UAshenOathAttributeSet* GetAttributeSet() const;
+
+	// True means GAS accepted the configured single-swing activation request.
+	bool RequestSingleSwing();
+	bool IsSingleSwingActive() const;
+	void CancelSingleSwing();
+
+	FSingleSwingEndedEvent& OnSingleSwingEnded()
+	{
+		return SingleSwingEndedEvent;
+	}
+
+#if WITH_DEV_AUTOMATION_TESTS
+	// Supplies transient test configuration without exposing mutable runtime setup.
+	void GrantSingleSwingForTesting(UCombatActionData* ActionData);
+#endif
 
 protected:
 	virtual void BeginPlay() override;
@@ -36,6 +58,9 @@ protected:
 
 private:
 	void ApplyInitialAttributes();
+	bool GrantConfiguredAbilities();
+	void CancelCombatAbilities();
+	void HandleAbilityEnded(const FAbilityEndedData& EndedData);
 
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|AbilitySystem")
 	TSubclassOf<UGameplayEffect> InitialAttributesEffect;
@@ -53,4 +78,17 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AshenOath|Combat", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UCombatDamageComponent> CombatDamageComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AshenOath|Combat", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UCombatMeleeComponent> CombatMeleeComponent;
+
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Boss")
+	TObjectPtr<UCombatActionData> SingleSwingAction;
+
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Boss")
+	TSubclassOf<UAshenOathBossSingleSwingAbility> SingleSwingAbilityClass;
+
+	FGameplayAbilitySpecHandle SingleSwingAbilitySpecHandle;
+	FDelegateHandle AbilityEndedDelegateHandle;
+	FSingleSwingEndedEvent SingleSwingEndedEvent;
 };
