@@ -10,6 +10,7 @@ class UAshenOathHUDRootWidget;
 class AAshenOathBossCharacter;
 class APlayerController;
 class APawn;
+enum class EAshenOathMatchOutcome : uint8;
 
 
 /**
@@ -29,6 +30,7 @@ private:
 	void HandleActiveBossChanged(AAshenOathBossCharacter* BossCharacter);
 
 	void HandleActivePlayer(APawn* NewPawn);
+	void HandleMatchOutcomeChanged(EAshenOathMatchOutcome Outcome);
 
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|UI")
 	TSubclassOf<UAshenOathHUDRootWidget> RootWidgetClass;
@@ -43,6 +45,7 @@ private:
 	TWeakObjectPtr<APlayerController> BoundPlayerController;
 
 	FDelegateHandle ActiveBossChangedHandle;
+	FDelegateHandle MatchOutcomeChangedHandle;
 
 	FDelegateHandle ActivePlayerHandle;
 };

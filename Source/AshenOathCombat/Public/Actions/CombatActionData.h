@@ -38,6 +38,11 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat Action|Damage")
 	TSubclassOf<UGameplayEffect> DamageEffect;
 
+	// Source-authored eligibility only. The target Defense component still
+	// decides timing and enforces one perfect-dodge result per dodge action.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat Action|Damage")
+	bool bCanTriggerPerfectDodge = false;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat Action|Melee",
 		meta = (ClampMin = "0.1", Units = "cm"))
 	float MeleeTraceRadius = 12.0f;
@@ -71,4 +76,14 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat Action|Window",
 		meta = (ClampMin = "0.01", Units = "s"))
 	float WindowDuration = 0.0f;
+
+	// Dodge-only timing. When enabled by the Dodge Ability this interval must
+	// be a proper subset of the ordinary defensive window above.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat Action|Window|Perfect Dodge",
+		meta = (ClampMin = "0.0", Units = "s"))
+	float PerfectDodgeWindowStartTime = 0.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat Action|Window|Perfect Dodge",
+		meta = (ClampMin = "0.0", Units = "s"))
+	float PerfectDodgeWindowDuration = 0.0f;
 };

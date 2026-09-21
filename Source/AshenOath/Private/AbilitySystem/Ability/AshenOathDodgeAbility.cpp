@@ -161,7 +161,9 @@ void UAshenOathDodgeAbility::ActivateAbility(
 		ActionData->WindowTags,
 		ActionData->WindowStartTime,
 		ActionData->WindowDuration,
-		ExecutionStartWorldTime
+		ExecutionStartWorldTime,
+		ActionData->PerfectDodgeWindowStartTime,
+		ActionData->PerfectDodgeWindowDuration
 	);
 
 	if (!ActiveDefenseWindow.IsValid())
@@ -255,6 +257,8 @@ bool UAshenOathDodgeAbility::IsActionDataReady(
 		MovementDirection.SizeSquared2D() <= SMALL_NUMBER ||
 		ActionData->WindowStartTime < 0.0f ||
 		ActionData->WindowDuration <= KINDA_SMALL_NUMBER ||
+		ActionData->PerfectDodgeWindowStartTime < 0.0f ||
+		ActionData->PerfectDodgeWindowDuration < 0.0f ||
 		!ActionData->WindowTags.HasTagExact(
 			AshenOathGameplayTags::State_Invulnerable) ||
 		!ActorInfo ||
@@ -274,7 +278,9 @@ bool UAshenOathDodgeAbility::IsActionDataReady(
 	return Defense && Defense->CanBeginDodgeWindow(
 		ActionData->WindowTags,
 		ActionData->WindowStartTime,
-		ActionData->WindowDuration
+		ActionData->WindowDuration,
+		ActionData->PerfectDodgeWindowStartTime,
+		ActionData->PerfectDodgeWindowDuration
 	);
 }
 

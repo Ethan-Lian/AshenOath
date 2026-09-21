@@ -6,11 +6,14 @@
 #include "AbilitySystem/AshenOathAttributeSet.h"
 #include "Actions/CombatActionData.h"
 #include "Actions/CombatMeleeComponent.h"
+#include "Reaction/CombatHitReactionComponent.h"
+#include "Death/CombatDeathComponent.h"
 #include "Components/StateTreeComponent.h"
 #include "Damage/CombatDamageComponent.h"
 #include "Game/AshenOathGameMode.h"
 #include "GameplayEffect.h"
 #include "GameplayTags/AshenOathGameplayTags.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 AAshenOathBossCharacter::AAshenOathBossCharacter()
 {
@@ -28,6 +31,19 @@ AAshenOathBossCharacter::AAshenOathBossCharacter()
 	CombatDamageComponent = CreateDefaultSubobject<UCombatDamageComponent>(TEXT("CombatDamageComponent"));
 	CombatDamageComponent->ConfigureInvulnerabilityTag(AshenOathGameplayTags::State_Invulnerable);
 	CombatMeleeComponent = CreateDefaultSubobject<UCombatMeleeComponent>(TEXT("CombatMeleeComponent"));
+	HitReactionComponent = CreateDefaultSubobject<UCombatHitReactionComponent>(
+		TEXT("HitReactionComponent")
+	);
+	HitReactionComponent->ConfigureGameplayTags(
+		AshenOathGameplayTags::State_Staggered,
+		AshenOathGameplayTags::State_Dead,
+		AshenOathGameplayTags::Ability_Action
+	);
+	DeathComponent = CreateDefaultSubobject<UCombatDeathComponent>(TEXT("DeathComponent"));
+	DeathComponent->ConfigureDeathContract(
+		UAshenOathAttributeSet::GetHealthAttribute(),
+		AshenOathGameplayTags::State_Dead
+	);
 
 	SingleSwingAbilityClass = UAshenOathBossSingleSwingAbility::StaticClass();
 
@@ -47,9 +63,22 @@ void AAshenOathBossCharacter::BeginPlay()
 		this,
 		&AAshenOathBossCharacter::HandleAbilityEnded
 	);
+	DeathStartedHandle = DeathComponent->OnDeathStarted().AddUObject(
+		this,
+		&AAshenOathBossCharacter::HandleDeathStarted
+	);
 	ApplyInitialAttributes();
 
 	if (!bInitialAttributesApplied)
+	{
+		return;
+	}
+
+	CombatDamageComponent->ConfigureTerminalStateTag(AshenOathGameplayTags::State_Dead);
+
+	DeathComponent->Initialize(AbilitySystemComponent);
+
+	if (DeathComponent->IsDeathStarted())
 	{
 		return;
 	}
@@ -73,6 +102,12 @@ void AAshenOathBossCharacter::BeginPlay()
 
 void AAshenOathBossCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (DeathComponent && DeathStartedHandle.IsValid())
+	{
+		DeathComponent->OnDeathStarted().Remove(DeathStartedHandle);
+		DeathStartedHandle.Reset();
+	}
+
 	if (StateTreeComponent)
 	{
 		StateTreeComponent->StopLogic(TEXT("Boss EndPlay"));
@@ -222,5 +257,40 @@ void AAshenOathBossCharacter::HandleAbilityEnded(const FAbilityEndedData& EndedD
 	if (EndedData.AbilitySpecHandle == SingleSwingAbilitySpecHandle)
 	{
 		SingleSwingEndedEvent.Broadcast(EndedData.bWasCancelled);
+	}
+}
+
+void AAshenOathBossCharacter::HandleDeathStarted()
+{
+	if (StateTreeComponent)
+	{
+		StateTreeComponent->StopLogic(TEXT("Boss died"));
+	}
+
+	CancelCombatAbilities();
+
+	if (CombatMeleeComponent)
+	{
+		CombatMeleeComponent->ResetCombatState();
+	}
+
+	if (HitReactionComponent)
+	{
+		HitReactionComponent->ResetReaction();
+	}
+
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->StopMovementImmediately();
+		Movement->DisableMovement();
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		if (AAshenOathGameMode* GameMode =
+			World->GetAuthGameMode<AAshenOathGameMode>())
+		{
+			GameMode->ReportBossDeath(this);
+		}
 	}
 }

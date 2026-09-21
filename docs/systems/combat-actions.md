@@ -1,6 +1,6 @@
 # 战斗动作与伤害
 
-当前实现由 GameplayAbility 驱动玩家单段轻击、前/后闪避和 Boss 单次挥击。共享 `UCombatActionData` 只保存配置，不保存执行状态；旧 `UCombatActionComponent` 及其执行句柄已经删除。
+当前实现由 GameplayAbility 驱动玩家单段轻击、前/后闪避和 Boss 单次挥击，并已接入普通/完美闪避判定、基础受击与死亡清理。共享 `UCombatActionData` 只保存配置，不保存执行状态；旧 `UCombatActionComponent` 及其执行句柄已经删除。
 
 ## 职责边界
 
@@ -11,11 +11,13 @@
 | `UAshenOathDodgeAbility` | 拥有一次闪避的方向快照、Montage、Cost、位移 Task、Defense 窗口和统一结束流程 |
 | `UAshenOathBossSingleSwingAbility` | 拥有一次 Boss 挥击的 Montage、Melee 会话、Cost 提交与统一结束流程；不决定接近、恢复或下一招 |
 | `UAbilityTask_ApplyCombatMovement` | 按动作时间执行 Sweep 位移，接管并恢复 MovementMode/RootMotionMode |
-| `UCombatDefenseComponent` | 保存闪避窗口的世界时间和来源句柄，仅增加/移除自己持有的窗口 Tag |
+| `UCombatDefenseComponent` | 保存普通/完美闪避窗口、来源句柄和单次消费状态，仅增加/移除自己持有的窗口 Tag |
 | `UAshenOathStaminaRecoveryComponent` | 保存跨动作的延迟计时器和恢复 Effect；成功消耗重启，拒绝请求不触碰 |
 | `UCombatMeleeComponent` | 保存本次攻击的配置与动画来源快照；验证 Notify 来源，连续扫掠并在窗口内去重 |
 | `UAnimNotifyState_CombatHitWindow` | 从 UE 动画回调提取 Mesh、动画来源、Montage 实例 ID 和 Notify 实例 ID；不保存战斗状态 |
-| `UCombatDamageComponent` | 在目标侧校验伤害请求；按命中时刻区分动作拥有的闪避无敌和其他来源无敌，再经 GAS 应用伤害 Effect |
+| `UCombatDamageComponent` | 在目标侧拒绝终止目标；按命中时刻区分普通/完美闪避和其他无敌，经 GAS 应用伤害 Effect 并广播解析结果 |
+| `UCombatHitReactionComponent` | 监听目标的 Applied 结果，取消可中断动作，拥有短硬直 Tag、计时器和基础受击 Montage |
+| `UCombatDeathComponent` | 观察注入的生命属性，拥有一次性终止 Tag、死亡事件和基础死亡 Montage |
 | `UCombatActionData` | Montage、Cost/Damage Effect、扫掠参数，以及闪避位移和 Tag 窗口配置 |
 
 `AshenOath` 游戏模块负责组装角色与 Ability；`AshenOathCombat` 只依赖引擎和 GAS 公共接口，不引用玩家、Boss、项目 AttributeSet、原生 Tag 或 UI。
@@ -66,7 +68,15 @@ Controller 保存最近的二维移动意图；按下闪避时 Character 选择�
 
 Montage 播放确认且 Cost 提交成功后，Ability 以同一个世界时间创建 Defense 窗口和位移 Task。Task 在整段执行期间忽略动画根位移，位移段临时切换 MovementMode，通过 `SafeMoveUpdatedComponent` 逐帧 Sweep；墙体只允许碰撞有效的位移量，结束或中断恢复先前模式。
 
-Defense 先分配来源句柄，再由 Ability 保存句柄并激活窗口，避免添加 loose Tag 的同步回调先于所有权建立。窗口开始时只增加自己持有的一份 `State.Invulnerable`，结束时只移除这一份。Damage 以 `HitTimeSeconds` 查询 Defense 的世界时间范围；若 ASC 还有额外无敌计数，则返回 `OtherInvulnerable`。
+Defense 先分配来源句柄，再由 Ability 保存句柄并激活窗口，避免添加 loose Tag 的同步回调先于所有权建立。窗口开始时只增加自己持有的一份 `State.Invulnerable`，结束时只移除这一份。完美窗口必须是普通窗口的真子集；`TryConsumePerfectDodge` 只有在窗口内首次命中时成功，因此一次闪避最多返回一次 `PerfectDodge`。
+
+Damage 以 `HitTimeSeconds` 查询 Defense 的世界时间范围。只有伤害尝试声明 `bCanTriggerPerfectDodge` 且命中时间落在未消费的完美窗口时，普通无敌拒绝才升级为 `PerfectDodge`；窗口内的后续攻击仍按普通闪避无敌处理。若 ASC 还有额外无敌计数，则返回 `OtherInvulnerable`。来源或目标已有终止 Tag 时，请求直接返回 `Invalid`，不再应用 Effect。
+
+## 受击、死亡与结算边界
+
+CombatDamage 在解析每次请求后同步广播结果。HitReaction 只响应 `Applied`：先拥有短硬直 Tag，再取消带可中断动作 Tag 的 Ability、停止移动并播放配置的受击 Montage；计时结束、死亡或 EndPlay 都只清理自己拥有的 Tag 和计时器。
+
+CombatDeath 由游戏模块注入生命属性和终止 Tag，初始化后监听 ASC 属性变化。生命首次降到 0 时，它先记录不可逆死亡状态并添加自己拥有的一份终止 Tag，然后广播 `DeathStarted`，最后播放死亡 Montage。玩家/Boss 宿主分别在回调中清理自身动作、Melee、Defense、Reaction、恢复、AI 和移动，再把死亡报告给 GameMode；通用 Combat 模块不引用具体角色、GameMode 或 UI。
 
 ## 恢复与清理
 
@@ -74,4 +84,4 @@ Defense 先分配来源句柄，再由 Ability 保存句柄并激活窗口，避
 
 轻击的所有出口汇入 `EndAbility`：先撤销 Ability 保存的会话句柄，再让 Melee 按稳定快照清理窗口与配置，最后由 GAS 结束 Task/停止 Montage。这样 Montage 停止过程中同步到达的 Notify 或 Task 回调只能看见已失效的会话。
 
-闪避的所有出口同样汇入 `EndAbility`：先撤销 Ability 保存的 Defense 句柄，再让 Defense 清除自己拥有的窗口；随后 GAS 销毁位移和 Montage Task，位移 Task 恢复 MovementMode 与 RootMotionMode。死亡与退出先取消战斗 Ability，再停止跨动作恢复，最后清理 ASC ActorInfo。
+闪避的所有出口同样汇入 `EndAbility`：先撤销 Ability 保存的 Defense 句柄，再让 Defense 清除自己拥有的窗口；随后 GAS 销毁位移和 Montage Task，位移 Task 恢复 MovementMode 与 RootMotionMode。死亡广播后由宿主取消战斗 Ability 并复位各 Combat 组件；退出还会解除属性/伤害监听并最终清理 ASC ActorInfo。

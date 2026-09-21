@@ -144,6 +144,7 @@ void UAshenOathBossSingleSwingAbility::ActivateAbility(
 	// synchronous callbacks that cancel this execution.
 	ActiveMeleeSession = CombatMeleeComponent->BeginSession(
 		ActionData->DamageEffect,
+		ActionData->bCanTriggerPerfectDodge,
 		ActionData->MeleeTraceRadius,
 		ActionData->MeleeTraceBones,
 		MeshComponent,

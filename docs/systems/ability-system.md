@@ -1,6 +1,6 @@
 # GAS 与属性系统
 
-当前系统为玩家和 Boss 提供 ASC、生命/耐力属性、初始 GameplayEffect 入口和共享状态 Tag。单段近战伤害、动作耐力消耗、延迟恢复和普通闪避无敌已接入 GAS；Health 归零后的完整死亡/胜负流程仍未实现。
+当前系统为玩家和 Boss 提供 ASC、生命/耐力属性、初始 GameplayEffect 入口和共享状态 Tag。单段近战伤害、动作耐力消耗、延迟恢复、普通/完美闪避、基础受击与 Health 归零后的死亡/胜负/重试流程已接入。
 
 设计理由见 [ADR-0001](../adr/0001-character-owned-ability-system.md)，系统关系见 [架构总览](../architecture.md)。
 
@@ -8,8 +8,8 @@
 
 | 入口 | 当前责任 |
 |---|---|
-| [Player Character](../../Source/AshenOath/Private/Characters/AshenOathPlayerCharacter.cpp) | 构造 ASC/AttributeSet、Defense 与耐力恢复等组件；在 `PossessedBy` 刷新 ActorInfo 并授予 Ability，在 BeginPlay 配置恢复与闪避窗口 Tag 并监听 Dead |
-| [Boss Character](../../Source/AshenOath/Private/Characters/AshenOathBossCharacter.cpp) | 构造 ASC/AttributeSet/StateTreeComponent，授予单次挥击 Ability，并协调 GAS 与树的启动、退出 |
+| [Player Character](../../Source/AshenOath/Private/Characters/AshenOathPlayerCharacter.cpp) | 构造 ASC/AttributeSet 与 Combat 组件；刷新 ActorInfo、授予 Ability，注入项目 Tag/属性并响应死亡事件 |
+| [Boss Character](../../Source/AshenOath/Private/Characters/AshenOathBossCharacter.cpp) | 构造 ASC/AttributeSet、Combat 与 StateTree 组件，授予单次挥击 Ability，并协调 GAS、树和死亡的启动/退出 |
 | [AttributeSet](../../Source/AshenOath/Private/AbilitySystem/AshenOathAttributeSet.cpp) | 维护 Health/MaxHealth、Stamina/MaxStamina 的范围 |
 | [Native Gameplay Tags](../../Source/AshenOath/Private/GameplayTags/AshenOathGameplayTags.cpp) | 注册 `State.Dead`、`State.Invulnerable`、`State.Staggered` |
 
@@ -22,16 +22,15 @@
 ```text
 BeginPlay
   → 配置 StaminaRecovery 的恢复 Effect/延迟
-  → 配置 CombatDefense 的闪避窗口 Tag
-  → 配置 CombatDamage 的 Invulnerable Tag
-  → 监听 State.Dead，进入时取消动作并停止恢复
+  → 向 Defense/Damage/HitReaction/Death 注入项目 Tag 与 Health 属性
+  → 绑定 DeathStarted；初始属性就绪后初始化 Death 的 Health 观察
 PossessedBy(NewController)
   → 父类建立占有关系
   → InitAbilityActorInfo(this, this)
   → ApplyInitialAttributes()
   → 按 SourceObject 授予轻击、前闪与后闪 AbilitySpec（重复占有不重复授予）
 EndPlay
-  → 解除 Dead 监听
+  → 解除 DeathStarted 与 Tag 监听
   → 清理动作、窗口和恢复
   → ClearActorInfo()
 ```
@@ -45,11 +44,12 @@ BeginPlay
   → InitAbilityActorInfo(this, this)
   → ApplyInitialAttributes()
   → 授予配置了 ActionData 的 Boss 单次挥击 Ability
+  → 初始化 Death 的 Health 观察并绑定 DeathStarted
   → 注册到 GameMode
   → StateTreeComponent.StartLogic()
 EndPlay
   → StateTreeComponent.StopLogic()
-  → 解除 Ability 结束监听并取消残留战斗 Ability
+  → 解除 Death/Ability 结束监听并取消残留战斗 Ability
   → ASC.ClearActorInfo()
 ```
 
@@ -77,5 +77,7 @@ StateTree 关闭自动启动，由 Boss 显式控制顺序：初始属性、单�
 - `PostGameplayEffectExecute`：Effect 执行后读取已提交值并归整相关属性。
 
 `PostGameplayEffectExecute` 对应 Effect 执行导致的 BaseValue 修改，不覆盖所有持续效果应用。当前属性回归集中在 Instant Effect，持续与叠加效果需另行验证。
+
+Health 的数值约束仍只属于 AttributeSet。`UCombatDeathComponent` 观察最终 Health 值并拥有一次性的存活→死亡转换：先添加注入的 `State.Dead`，再广播同步清理事件。该事件由具体角色消费，因为取消玩家恢复、停止 Boss StateTree、禁用移动和报告 GameMode 都属于游戏组装层，而不是通用属性或 Combat 模块职责。
 
 玩家耐力恢复使用一个无限期周期 Effect，每 0.1 秒增加 2 点 Stamina，并继续经过 AttributeSet 的 `[0, MaxStamina]` 约束。`UAshenOathStaminaRecoveryComponent` 只持有自己的延迟计时器和恢复 Effect；任一 Combat Ability 成功提交非零 Cost 后通知它重启恢复，拒绝动作不会改动当前恢复状态。详见 [战斗动作与伤害](combat-actions.md)。

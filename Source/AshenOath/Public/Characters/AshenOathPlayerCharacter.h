@@ -20,6 +20,8 @@ class UGameplayAbility;
 class UAshenOathLightAttackAbility;
 class UAshenOathDodgeAbility;
 class UAshenOathStaminaRecoveryComponent;
+class UCombatHitReactionComponent;
+class UCombatDeathComponent;
 
 /**
  * Player-side GAS host, movement and combat actions.
@@ -82,6 +84,14 @@ private:
 		meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UAshenOathStaminaRecoveryComponent> StaminaRecoveryComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AshenOath|Combat",
+		meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UCombatHitReactionComponent> HitReactionComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AshenOath|Combat",
+		meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UCombatDeathComponent> DeathComponent;
+
 	// Immutable configuration supplied to the granted light-attack AbilitySpec.
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat")
 	TObjectPtr<UCombatActionData> LightAttackAction;
@@ -122,13 +132,13 @@ private:
 
 	// PossessedBy may run again after repossession; initial stats are applied only once.
 	bool bInitialAttributesApplied = false;
-	FDelegateHandle DeadStateChangedHandle;
+	FDelegateHandle DeathStartedHandle;
 	FDelegateHandle MovementLockedStateChangedHandle;
 
 	// Applies the startup GameplayEffect that establishes initial attribute values.
 	void ApplyInitialAttributes();
 
-	void HandleDeadStateChanged(const FGameplayTag Tag, int32 NewCount);
+	void HandleDeathStarted();
 	void HandleMovementLockedStateChanged(const FGameplayTag Tag, int32 NewCount);
 
 	void GrantConfiguredAbilities();
