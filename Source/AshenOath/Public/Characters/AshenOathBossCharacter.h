@@ -14,6 +14,8 @@ class UCombatActionData;
 class UCombatDamageComponent;
 class UCombatMeleeComponent;
 class UAshenOathBossSingleSwingAbility;
+class UCombatHitReactionComponent;
+class UCombatDeathComponent;
 struct FAbilityEndedData;
 
 /**
@@ -61,6 +63,7 @@ private:
 	bool GrantConfiguredAbilities();
 	void CancelCombatAbilities();
 	void HandleAbilityEnded(const FAbilityEndedData& EndedData);
+	void HandleDeathStarted();
 
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|AbilitySystem")
 	TSubclassOf<UGameplayEffect> InitialAttributesEffect;
@@ -82,6 +85,12 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AshenOath|Combat", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UCombatMeleeComponent> CombatMeleeComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AshenOath|Combat", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UCombatHitReactionComponent> HitReactionComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AshenOath|Combat", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UCombatDeathComponent> DeathComponent;
+
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Boss")
 	TObjectPtr<UCombatActionData> SingleSwingAction;
 
@@ -90,5 +99,6 @@ private:
 
 	FGameplayAbilitySpecHandle SingleSwingAbilitySpecHandle;
 	FDelegateHandle AbilityEndedDelegateHandle;
+	FDelegateHandle DeathStartedHandle;
 	FSingleSwingEndedEvent SingleSwingEndedEvent;
 };

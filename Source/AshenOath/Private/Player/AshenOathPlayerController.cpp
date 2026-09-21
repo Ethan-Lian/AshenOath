@@ -8,6 +8,45 @@
 #include "InputAction.h"
 #include "InputActionValue.h"
 #include "InputMappingContext.h"
+#include "Game/AshenOathGameMode.h"
+
+bool AAshenOathPlayerController::RequestRetry()
+{
+	UWorld* World = GetWorld();
+	AAshenOathGameMode* GameMode = World
+		? World->GetAuthGameMode<AAshenOathGameMode>()
+		: nullptr;
+
+	return IsLocalController() &&
+		GameMode &&
+		GameMode->RequestRetry(this);
+}
+
+void AAshenOathPlayerController::SetGameplayInputEnabled(const bool bEnabled)
+{
+	if (bGameplayInputEnabled == bEnabled)
+	{
+		return;
+	}
+
+	bGameplayInputEnabled = bEnabled;
+	CurrentMovementIntent = FVector2D::ZeroVector;
+	SetIgnoreMoveInput(!bEnabled);
+	SetIgnoreLookInput(!bEnabled);
+
+	if (bEnabled)
+	{
+		SetInputMode(FInputModeGameOnly());
+		SetShowMouseCursor(false);
+		RefreshGameplayInputMapping();
+	}
+	else
+	{
+		RemoveGameplayInputMapping();
+		SetInputMode(FInputModeGameAndUI());
+		SetShowMouseCursor(true);
+	}
+}
 
 void AAshenOathPlayerController::SetupInputComponent()
 {
@@ -78,7 +117,7 @@ void AAshenOathPlayerController::OnPossess(APawn* InPawn)
 
 	RefreshGameplayInputMapping();
 
-	if (IsLocalController() && GetLocalPlayer() &&
+	if (bGameplayInputEnabled && IsLocalController() && GetLocalPlayer() &&
 		Cast<AAshenOathPlayerCharacter>(GetPawn()))
 	{
 		SetInputMode(FInputModeGameOnly());
@@ -106,9 +145,11 @@ void AAshenOathPlayerController::HandleMove(const FInputActionValue& Value)
 		return;
 	}
 
-	CurrentMovementIntent = Value.Get<FVector2D>();
+	CurrentMovementIntent = bGameplayInputEnabled
+		? Value.Get<FVector2D>()
+		: FVector2D::ZeroVector;
 
-	if (IsMoveInputIgnored())
+	if (!bGameplayInputEnabled || IsMoveInputIgnored())
 	{
 		return;
 	}
@@ -126,7 +167,7 @@ void AAshenOathPlayerController::HandleMove(const FInputActionValue& Value)
 
 void AAshenOathPlayerController::HandleLook(const FInputActionValue& Value)
 {
-	if (!IsLocalController() || IsLookInputIgnored() ||
+	if (!bGameplayInputEnabled || !IsLocalController() || IsLookInputIgnored() ||
 		!IsValid(Cast<AAshenOathPlayerCharacter>(GetPawn())))
 	{
 		return;
@@ -141,7 +182,7 @@ void AAshenOathPlayerController::RefreshGameplayInputMapping()
 {
 	// Input setup and possession can become ready separately. Both call this helper,
 	// which must leave one valid registration even when called more than once.
-	if (!IsLocalController() || !GetLocalPlayer() ||
+	if (!bGameplayInputEnabled || !IsLocalController() || !GetLocalPlayer() ||
 		!BoundInputComponent.IsValid() ||
 		BoundInputComponent.Get() != InputComponent.Get() ||
 		!IsValid(Cast<AAshenOathPlayerCharacter>(GetPawn())))
@@ -209,7 +250,7 @@ void AAshenOathPlayerController::RemoveGameplayInputMapping()
 
 void AAshenOathPlayerController::HandleLightAttack()
 {
-	if (!IsLocalController())
+	if (!bGameplayInputEnabled || !IsLocalController())
 	{
 		return;
 	}
@@ -224,7 +265,7 @@ void AAshenOathPlayerController::HandleLightAttack()
 
 void AAshenOathPlayerController::HandleDodge()
 {
-	if (!IsLocalController())
+	if (!bGameplayInputEnabled || !IsLocalController())
 	{
 		return;
 	}

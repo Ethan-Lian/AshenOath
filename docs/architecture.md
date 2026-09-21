@@ -1,6 +1,6 @@
 # AshenOath 架构总览
 
-AshenOath 是单人第三人称 Boss 战项目。`AshenOath` 游戏模块组装输入、角色、GAS 和 UI；`AshenOathCombat` 提供不依赖具体玩家/Boss 类型的动作、近战扫掠与目标侧伤害组件。
+AshenOath 是单人第三人称 Boss 战项目。`AshenOath` 游戏模块组装输入、角色、GAS、胜负和 UI；`AshenOathCombat` 提供不依赖具体玩家/Boss 类型的动作、近战扫掠、目标侧伤害、受击和死亡组件。
 
 ## 当前结构
 
@@ -27,6 +27,14 @@ flowchart TD
     MELEE -->|DamageAttempt| DAMAGE[目标 CombatDamage]
     DAMAGE -->|按命中时刻查询| DEFENSE
     DAMAGE -->|Effect / 其他无敌查询| GAS
+    DAMAGE -->|Applied 结果| REACTION[CombatHitReaction]
+    GAS -->|Health 归零| DEATH[CombatDeath]
+    DEATH -->|玩家 DeathStarted| P
+    DEATH -->|Boss DeathStarted| B
+    P -->|玩家死亡| GM
+    B -->|Boss 死亡| GM
+    GM -->|唯一胜负结果| HUD[HUD / Outcome Widget]
+    HUD -->|Retry 请求| PC
     PC -->|ControlRotation| CAM[SpringArm / Camera]
     CM -->|Velocity / IsFalling| AN
     P -->|初始化 / 读取状态 Tag| GAS
@@ -39,19 +47,22 @@ flowchart TD
 
 | 对象 | 持有或管理的内容 | 边界 |
 |---|---|---|
-| GameMode | 默认 Pawn/Controller 类选择 | 原生类提供默认值，蓝图子类配置资源；当前无局内流程协调 |
-| PlayerController | 自身 InputComponent 的绑定、本地 Mapping Context 注册记录、最近移动意图 | 每次输入取当前 Pawn；只把闪避意图交给 Character，不实现位移积分或修改属性 |
+| GameMode | 默认 Pawn/Controller 类、当前 Boss 和一次性胜负结果 | 首个有效死亡报告决定胜负；只在结算后接受重试并重新加载当前关卡 |
+| PlayerController | InputComponent 绑定、Mapping Context 注册、最近移动意图和重试转发 | 每次输入取当前 Pawn；结算时关闭 Gameplay 输入并切换到 UI，不自行决定胜负 |
 | Player Character | ASC、AttributeSet、镜头和 Combat 组件；使用继承的 CharacterMovement | 验证角色状态、选择玩家动作数据，将相对视角意图转为世界方向；不直接写战斗数值 |
 | Boss Character | ASC、AttributeSet、StateTreeComponent、单次挥击 AbilitySpec | 协调初始化和退出顺序；向 StateTree 提供请求、取消和对应 Ability 结束通知，不播放动画或执行选招评分 |
-| AttributeSet | Health、MaxHealth、Stamina、MaxStamina | 维护数值范围；Health 归零目前不会自动生成死亡状态 |
+| AttributeSet | Health、MaxHealth、Stamina、MaxStamina | 只维护数值范围；Death 组件观察 Health 并拥有终止转换 |
 | Combat GameplayAbility 基类 | 动作互斥、ActionData Cost 检查/应用与成功消耗通知 | 只共享 GAS 事务，不编排具体攻击或闪避 |
 | LightAttack GameplayAbility | 一次轻击的激活互斥、Montage Task、Cost 提交及 Melee 会话协调 | Montage 启动后才提交费用；结束、中断、失败统一经 `EndAbility` 释放会话 |
 | Dodge GameplayAbility | 一次闪避的方向快照、Montage、Cost、位移 Task 与 Defense 窗口协调 | 前后配置由两个 AbilitySpec 的 SourceObject 区分；玩法状态只在费用成功后建立 |
 | CombatMovement AbilityTask | 一次代码位移的时间进度、MovementMode 与 RootMotionMode 接管 | Sweep 受阻自然截断；完成、取消和失败均恢复接管状态 |
-| CombatDefense | 闪避窗口的世界时间、来源句柄和自己施加的 loose Tag | 不拥有 Ability；Damage 只通过它区分闪避无敌与其他无敌 |
+| CombatDefense | 普通/完美闪避窗口、来源句柄和自己施加的 loose Tag | 完美窗口必须是普通窗口的真子集且一次闪避最多消费一次；死亡时可整体复位 |
 | StaminaRecovery | 延迟计时器及自己施加的周期恢复 Effect | 跨越多次动作；只有成功消耗重启，死亡和退出停止 |
 | CombatMelee | 伤害配置快照、播放来源身份、武器扫掠、Notify 窗口和窗口内去重 | 不查找当前 Ability；只接受所属 Mesh、AnimInstance、Montage 实例的信号并提交中立伤害尝试 |
-| CombatDamage | 目标侧伤害入口和无敌判定 | 区分闪避无敌与其他无敌，通过源/目标 ASC 应用伤害 Effect |
+| CombatDamage | 目标侧伤害入口、终止状态拒绝、无敌判定和结果广播 | 区分普通/完美闪避与其他无敌，通过源/目标 ASC 应用伤害 Effect |
+| CombatHitReaction | 监听目标侧 Applied 结果，拥有短硬直 Tag、计时器和基础受击 Montage | 项目模块注入 Tag；终止状态不再启动受击，死亡可同步复位其状态 |
+| CombatDeath | 观察注入的 Health 属性，拥有一次性 Dead Tag、死亡事件和基础 Montage | 先建立终止状态，再广播给宿主清理并播放死亡表现；不引用具体角色或 GameMode |
+| HUD / Outcome Widget | 观察 GameMode 胜负并显示 Victory/Defeat 与 Retry | HUD 同步输入模式；Widget 只把按钮请求转发给 Controller |
 | AnimInstance | 本实例的移动表现数据；对 Character/Movement 的弱引用缓存 | 读取实际移动结果，不拥有 Gameplay 动作状态 |
 
 角色组件由构造函数创建。ASC 和 AttributeSet 随 Character 存续；动画缓存与输入注册记录使用弱引用，不延长所引用对象的生命周期。
@@ -63,6 +74,10 @@ flowchart TD
 **轻击到伤害**：Attack Input → Character 请求已授予的轻击 Ability → Montage Task 确认播放 → Melee 保存配置与播放实例快照 → GAS 提交一次 Cost → Notify 携带 Montage 实例 ID 开窗/扫掠 → 目标 CombatDamage 经 GAS 应用伤害。任何失败或中断先释放 Melee 会话，再由 Task 停止 Montage。
 
 **闪避到清理**：Dodge Input → Character 选择前/后 AbilitySpec 并冻结世界方向 → Dodge Ability 启动 Montage → 提交一次 Cost → Defense 建立窗口、Movement Task 执行 Sweep 位移 → `EndAbility` 释放 Defense，GAS 销毁 Task 并恢复移动/根位移模式。成功消耗独立通知 StaminaRecovery 重启延迟；拒绝请求不影响已有恢复。详见 [战斗动作与伤害](systems/combat-actions.md)。
+
+**伤害到受击/死亡**：CombatDamage 先拒绝终止目标和无敌命中；合格攻击在完美窗口内被拒绝时返回一次 `PerfectDodge`。成功伤害广播 `Applied`，HitReaction 取消可中断动作并短暂硬直；Health 归零时 CombatDeath 先添加 Dead Tag，再通知宿主停止动作、窗口、恢复、AI 与移动，最后向 GameMode 报告胜负。
+
+**结算到重试**：玩家或 Boss 的首个死亡报告提交唯一 Defeat/Victory → HUD 显示结算并关闭 Gameplay 输入 → Retry 按钮经 PlayerController 请求 GameMode → GameMode 重新加载当前关卡。
 
 **Boss 最小循环**：StateTree 的 Approach Task 通过 AIController 接近本地玩家 → SingleSwing Task 先监听对应 AbilitySpec 的结束，再调用 Boss 请求入口 → Boss SingleSwing Ability 播放项目 Montage、建立 Melee 会话并等待动画完成 → Task 按正常完成或取消得到成功/失败 → Recovery Task 保留无伤害间隔后重新接近。树退出时 Task 先解除监听并只取消自己等待的单次挥击。
 

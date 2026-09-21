@@ -161,6 +161,7 @@ bool FAshenOathDodgeAbilityLifecycleTest::RunTest(const FString& Parameters)
 
 	const FGameplayAttribute StaminaAttribute = UAshenOathAttributeSet::GetStaminaAttribute();
 	const FGameplayAttribute MaxStaminaAttribute = UAshenOathAttributeSet::GetMaxStaminaAttribute();
+	const FGameplayAttribute HealthAttribute = UAshenOathAttributeSet::GetHealthAttribute();
 	const float StaminaBeforeDodge = PlayerAbilitySystem->GetNumericAttribute(StaminaAttribute);
 	const FVector ForwardDodgeStart = Player->GetActorLocation();
 	const EMovementMode MovementModeBeforeDodge = Movement->MovementMode;
@@ -358,37 +359,7 @@ bool FAshenOathDodgeAbilityLifecycleTest::RunTest(const FString& Parameters)
 	PlayerAbilitySystem->CancelAbilities(&CombatAbilityTags);
 	Wall->Destroy();
 
-	PlayerAbilitySystem->SetNumericAttributeBase(
-		StaminaAttribute,
-		PlayerAbilitySystem->GetNumericAttribute(MaxStaminaAttribute)
-	);
-	TestTrue(
-		TEXT("A later dodge receives a clean execution"),
-		Player->RequestDodge(FVector2D::ZeroVector)
-	);
-	const UCombatActionData* FinalDodgeData = GetActiveDodgeData();
-	TestNotNull(TEXT("Later dodge keeps its ActionData source"), FinalDodgeData);
-	if (!FinalDodgeData)
-	{
-		CleanupWorld();
-		return false;
-	}
-	TickWorldFor(FinalDodgeData->WindowStartTime + 0.02f);
-	PlayerAbilitySystem->AddLooseGameplayTag(AshenOathGameplayTags::State_Dead);
-
-	TestFalse(TEXT("Death cancels the active dodge"), HasActiveDodge());
-	TestFalse(
-		TEXT("Death removes Defense-owned invulnerability"),
-		PlayerAbilitySystem->HasMatchingGameplayTag(AshenOathGameplayTags::State_Invulnerable)
-	);
-	TestFalse(TEXT("Death stops stamina recovery"), Recovery->HasPendingOrActiveRecovery());
-	TestEqual(
-		TEXT("Death cleanup restores movement mode"),
-		Movement->MovementMode.GetValue(),
-		MovementModeBeforeDodge
-	);
-
-	PlayerAbilitySystem->RemoveLooseGameplayTag(AshenOathGameplayTags::State_Dead);
+	Recovery->StopRecovery();
 	PlayerAbilitySystem->SetNumericAttributeBase(StaminaAttribute, 0.0f);
 
 	FGameplayAbilitySpec* BackwardDodgeSpec = nullptr;
@@ -407,7 +378,7 @@ bool FAshenOathDodgeAbilityLifecycleTest::RunTest(const FString& Parameters)
 		Player->RequestDodge(FVector2D(0.0f, -1.0f))
 	);
 	TestFalse(
-		TEXT("Rejected request does not restart recovery after death"),
+		TEXT("Rejected request does not restart recovery"),
 		Recovery->HasPendingOrActiveRecovery()
 	);
 
@@ -488,6 +459,36 @@ bool FAshenOathDodgeAbilityLifecycleTest::RunTest(const FString& Parameters)
 		bRecoveryWasStoppedDuringApplication);
 	TestFalse(TEXT("Synchronous cleanup leaves no owned recovery state"),
 		Recovery->HasPendingOrActiveRecovery());
+
+	PlayerAbilitySystem->SetNumericAttributeBase(
+		StaminaAttribute,
+		PlayerAbilitySystem->GetNumericAttribute(MaxStaminaAttribute)
+	);
+	TestTrue(
+		TEXT("A later dodge receives a clean execution"),
+		Player->RequestDodge(FVector2D::ZeroVector)
+	);
+	const UCombatActionData* FinalDodgeData = GetActiveDodgeData();
+	TestNotNull(TEXT("Later dodge keeps its ActionData source"), FinalDodgeData);
+	if (!FinalDodgeData)
+	{
+		CleanupWorld();
+		return false;
+	}
+	TickWorldFor(FinalDodgeData->WindowStartTime + 0.02f);
+	PlayerAbilitySystem->SetNumericAttributeBase(HealthAttribute, 0.0f);
+
+	TestFalse(TEXT("Death cancels the active dodge"), HasActiveDodge());
+	TestFalse(
+		TEXT("Death removes Defense-owned invulnerability"),
+		PlayerAbilitySystem->HasMatchingGameplayTag(AshenOathGameplayTags::State_Invulnerable)
+	);
+	TestFalse(TEXT("Death stops stamina recovery"), Recovery->HasPendingOrActiveRecovery());
+	TestEqual(
+		TEXT("Death disables character movement"),
+		Movement->MovementMode.GetValue(),
+		MOVE_None
+	);
 
 	CleanupWorld();
 	return true;

@@ -29,36 +29,28 @@ ECombatDamageResult UCombatDamageComponent::ApplyDamageAttempt(const FCombatDama
 		return ECombatDamageResult::Invalid;
 	}
 
-	if (InvulnerabilityTag.IsValid())
+	// A terminal actor neither deals nor receives damage, so both ASCs are checked.
+	if (TerminalStateTag.IsValid() &&
+		(SourceAbilitySystemComponent->HasMatchingGameplayTag(TerminalStateTag) ||
+		 TargetAbilitySystemComponent->HasMatchingGameplayTag(TerminalStateTag)))
 	{
-		const UCombatDefenseComponent* Defense =
-			TargetActor->FindComponentByClass<UCombatDefenseComponent>();
-		const bool bDodgeWindowOwnsHitTime = Defense &&
-			Defense->IsDodgeWindowActiveAt(
-				InvulnerabilityTag,
-				Attempt.HitTimeSeconds
-			);
-		const int32 DefenseOwnedTagCount = Defense &&
-			Defense->IsWindowTagApplied(InvulnerabilityTag) ? 1 : 0;
+		return ECombatDamageResult::Invalid;
+	}
 
-		// Independent invulnerability takes priority over the dodge window so a
-		// later perfect-dodge reward cannot be granted while another source is
-		// already protecting the target.
-		if (TargetAbilitySystemComponent->GetTagCount(InvulnerabilityTag) > DefenseOwnedTagCount)
-		{
-			return ECombatDamageResult::OtherInvulnerable;
-		}
-
-		if (bDodgeWindowOwnsHitTime)
-		{
-			return ECombatDamageResult::DodgeInvulnerable;
-		}
+	ECombatDamageResult InvulnerabilityResult = ECombatDamageResult::Invalid;
+	if (TryResolveInvulnerability(
+		Attempt,
+		*TargetActor,
+		*TargetAbilitySystemComponent,
+		InvulnerabilityResult))
+	{
+		return BroadcastResolvedResult(Attempt, InvulnerabilityResult);
 	}
 
 	FGameplayEffectContextHandle EffectContext = SourceAbilitySystemComponent->MakeEffectContext();
 	EffectContext.AddSourceObject(SourceActor);
 
-	const FGameplayEffectSpecHandle EffectSpec = 
+	const FGameplayEffectSpecHandle EffectSpec =
 	SourceAbilitySystemComponent->MakeOutgoingSpec(Attempt.DamageEffect, 1.0f, EffectContext);
 
 	if (!EffectSpec.IsValid())
@@ -69,12 +61,79 @@ ECombatDamageResult UCombatDamageComponent::ApplyDamageAttempt(const FCombatDama
 	const FActiveGameplayEffectHandle AppliedHandle =
 	SourceAbilitySystemComponent->ApplyGameplayEffectSpecToTarget(*EffectSpec.Data.Get(), TargetAbilitySystemComponent);
 
-	return AppliedHandle.WasSuccessfullyApplied() ? ECombatDamageResult::Applied : ECombatDamageResult::Invalid;
+	const ECombatDamageResult Result = AppliedHandle.WasSuccessfullyApplied()
+		? ECombatDamageResult::Applied
+		: ECombatDamageResult::Invalid;
+
+	return BroadcastResolvedResult(Attempt, Result);
+}
+
+ECombatDamageResult UCombatDamageComponent::BroadcastResolvedResult(
+	const FCombatDamageAttempt& Attempt,
+	const ECombatDamageResult Result)
+{
+	if (Result != ECombatDamageResult::Invalid)
+	{
+		DamageResolvedEvent.Broadcast(Attempt, Result);
+	}
+
+	return Result;
+}
+
+bool UCombatDamageComponent::TryResolveInvulnerability(
+	const FCombatDamageAttempt& Attempt,
+	AActor& TargetActor,
+	UAbilitySystemComponent& TargetAbilitySystemComponent,
+	ECombatDamageResult& OutResult) const
+{
+	if (!InvulnerabilityTag.IsValid())
+	{
+		return false;
+	}
+
+	UCombatDefenseComponent* DefenseComponent = TargetActor.FindComponentByClass<UCombatDefenseComponent>();
+
+	const bool bDodgeWindowOwnHitTime = DefenseComponent &&
+		DefenseComponent->IsDodgeWindowActiveAt(InvulnerabilityTag, Attempt.HitTimeSeconds);
+
+	const int32 DefenseOwnedTagCount =
+		DefenseComponent && DefenseComponent->IsWindowTagApplied(InvulnerabilityTag)
+			? 1
+			: 0;
+
+	// Independent invulnerability takes priority over the dodge window so a
+	// later perfect-dodge reward cannot be granted while another source is
+	// already protecting the target.
+	if (TargetAbilitySystemComponent.GetTagCount(InvulnerabilityTag) > DefenseOwnedTagCount)
+	{
+		OutResult = ECombatDamageResult::OtherInvulnerable;
+		return true;
+	}
+
+	if (!bDodgeWindowOwnHitTime)
+	{
+		return false;
+	}
+
+	if (Attempt.bCanTriggerPerfectDodge &&
+		DefenseComponent->TryConsumePerfectDodge(InvulnerabilityTag, Attempt.HitTimeSeconds))
+	{
+		OutResult = ECombatDamageResult::PerfectDodge;
+		return true;
+	}
+
+	OutResult = ECombatDamageResult::DodgeInvulnerable;
+	return true;
 }
 
 void UCombatDamageComponent::ConfigureInvulnerabilityTag(const FGameplayTag& Tag)
 {
 	InvulnerabilityTag = Tag;
+}
+
+void UCombatDamageComponent::ConfigureTerminalStateTag(const FGameplayTag& Tag)
+{
+	TerminalStateTag = Tag;
 }
 
 UAbilitySystemComponent* UCombatDamageComponent::ResolveAbilitySystemComponent(AActor* Actor)

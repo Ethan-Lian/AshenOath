@@ -131,6 +131,7 @@ void UAshenOathLightAttackAbility::ActivateAbility(
 	// path for both that cancellation and every later Montage exit.
 	ActiveMeleeSession = Melee->BeginSession(
 		ActionData->DamageEffect,
+		ActionData->bCanTriggerPerfectDodge,
 		ActionData->MeleeTraceRadius,
 		ActionData->MeleeTraceBones,
 		MeshComponent,

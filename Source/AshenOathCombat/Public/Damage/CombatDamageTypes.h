@@ -13,7 +13,8 @@ enum class ECombatDamageResult : uint8
 	Applied,
 	DodgeInvulnerable,
 	OtherInvulnerable,
-	Invalid
+	Invalid,
+	PerfectDodge
 };
 
 /**
@@ -37,4 +38,9 @@ struct ASHENOATHCOMBAT_API FCombatDamageAttempt
 	// World time at which collision actually occurred.
 	UPROPERTY(BlueprintReadWrite, Category = "Combat Damage")
 	double HitTimeSeconds = 0.0;
+
+	// Whether this source allows a dodge-window rejection to count as a
+	// perfect dodge. The target still owns timing and one-shot consumption.
+	UPROPERTY(BlueprintReadWrite, Category = "Combat Damage")
+	bool bCanTriggerPerfectDodge = false;
 };

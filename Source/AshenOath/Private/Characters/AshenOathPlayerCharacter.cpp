@@ -14,7 +14,10 @@
 #include "Defense/CombatDefenseComponent.h"
 #include "AbilitySystem/Ability/AshenOathDodgeAbility.h"
 #include "AbilitySystem/Ability/AshenOathLightAttackAbility.h"
+#include "Reaction/CombatHitReactionComponent.h"
+#include "Death/CombatDeathComponent.h"
 #include "GameplayAbilitySpec.h"
+#include "Game/AshenOathGameMode.h"
 
 
 AAshenOathPlayerCharacter::AAshenOathPlayerCharacter()
@@ -44,6 +47,21 @@ AAshenOathPlayerCharacter::AAshenOathPlayerCharacter()
 	StaminaRecoveryComponent = CreateDefaultSubobject<UAshenOathStaminaRecoveryComponent>(
 		TEXT("StaminaRecoveryComponent")
 	);
+	HitReactionComponent = CreateDefaultSubobject<UCombatHitReactionComponent>(
+		TEXT("HitReactionComponent")
+	);
+	HitReactionComponent->ConfigureGameplayTags(
+		AshenOathGameplayTags::State_Staggered,
+		AshenOathGameplayTags::State_Dead,
+		AshenOathGameplayTags::Ability_Action
+	);
+	DeathComponent = CreateDefaultSubobject<UCombatDeathComponent>(
+		TEXT("DeathComponent")
+	);
+	DeathComponent->ConfigureDeathContract(
+		UAshenOathAttributeSet::GetHealthAttribute(),
+		AshenOathGameplayTags::State_Dead
+	);
 
 	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 
@@ -60,13 +78,16 @@ void AAshenOathPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
+	if (DeathComponent)
+	{
+		DeathStartedHandle = DeathComponent->OnDeathStarted().AddUObject(
+			this,
+			&AAshenOathPlayerCharacter::HandleDeathStarted
+		);
+	}
+
 	if (AbilitySystemComponent)
 	{
-		DeadStateChangedHandle = AbilitySystemComponent->RegisterGameplayTagEvent(
-			AshenOathGameplayTags::State_Dead,
-			EGameplayTagEventType::NewOrRemoved
-		).AddUObject(this, &AAshenOathPlayerCharacter::HandleDeadStateChanged);
-
 		MovementLockedStateChangedHandle = AbilitySystemComponent->RegisterGameplayTagEvent(
 			AshenOathGameplayTags::State_MovementLocked,
 			EGameplayTagEventType::NewOrRemoved
@@ -84,6 +105,12 @@ void AAshenOathPlayerCharacter::BeginPlay()
 	if (CombatDamageComponent)
 	{
 		CombatDamageComponent->ConfigureInvulnerabilityTag(AshenOathGameplayTags::State_Invulnerable);
+		CombatDamageComponent->ConfigureTerminalStateTag(AshenOathGameplayTags::State_Dead);
+	}
+
+	if (bInitialAttributesApplied && DeathComponent)
+	{
+		DeathComponent->Initialize(AbilitySystemComponent);
 	}
 }
 
@@ -100,18 +127,20 @@ void AAshenOathPlayerCharacter::PossessedBy(AController* NewController)
 
 	ApplyInitialAttributes();
 	GrantConfiguredAbilities();
+
+	if (bInitialAttributesApplied && DeathComponent)
+	{
+		DeathComponent->Initialize(AbilitySystemComponent);
+	}
 }
 
 
 void AAshenOathPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	if (AbilitySystemComponent && DeadStateChangedHandle.IsValid())
+	if (DeathComponent && DeathStartedHandle.IsValid())
 	{
-		AbilitySystemComponent->RegisterGameplayTagEvent(
-			AshenOathGameplayTags::State_Dead,
-			EGameplayTagEventType::NewOrRemoved
-		).Remove(DeadStateChangedHandle);
-		DeadStateChangedHandle.Reset();
+		DeathComponent->OnDeathStarted().Remove(DeathStartedHandle);
+		DeathStartedHandle.Reset();
 	}
 
 	if (AbilitySystemComponent && MovementLockedStateChangedHandle.IsValid())
@@ -159,6 +188,7 @@ void AAshenOathPlayerCharacter::RequestMove(const FVector2D& MovementIntent, flo
 {
 	if (!GetController() || IsActorBeingDestroyed() ||
 		AbilitySystemComponent->HasMatchingGameplayTag(AshenOathGameplayTags::State_Dead) ||
+		AbilitySystemComponent->HasMatchingGameplayTag(AshenOathGameplayTags::State_Staggered) ||
 		AbilitySystemComponent->HasMatchingGameplayTag(AshenOathGameplayTags::State_MovementLocked))
 	{
 		return;
@@ -251,18 +281,44 @@ bool AAshenOathPlayerCharacter::RequestDodge(const FVector2D& MovementIntent)
 	return DodgeAbility && DodgeAbility->TryActivateWithMovementDirection(DodgeDirection);
 }
 
-void AAshenOathPlayerCharacter::HandleDeadStateChanged(const FGameplayTag, const int32 NewCount)
+void AAshenOathPlayerCharacter::HandleDeathStarted()
 {
-	if (NewCount <= 0)
-	{
-		return;
-	}
-
 	CancelCombatAbilities();
 
 	if (StaminaRecoveryComponent)
 	{
 		StaminaRecoveryComponent->StopRecovery();
+	}
+
+	if (CombatDefenseComponent)
+	{
+		CombatDefenseComponent->ResetDefenseState();
+	}
+
+	if (CombatMeleeComponent)
+	{
+		CombatMeleeComponent->ResetCombatState();
+	}
+
+	if (HitReactionComponent)
+	{
+		HitReactionComponent->ResetReaction();
+	}
+
+	ConsumeMovementInputVector();
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->StopMovementImmediately();
+		Movement->DisableMovement();
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		if (AAshenOathGameMode* GameMode =
+			World->GetAuthGameMode<AAshenOathGameMode>())
+		{
+			GameMode->ReportPlayerDeath(this);
+		}
 	}
 }
 

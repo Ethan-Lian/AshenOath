@@ -36,12 +36,27 @@ void UCombatDefenseComponent::TickComponent(
 bool UCombatDefenseComponent::CanBeginDodgeWindow(
 	const FGameplayTagContainer& WindowTags,
 	const float StartOffsetSeconds,
-	const float DurationSeconds) const
+	const float DurationSeconds,
+	const float PerfectDodgeStartOffsetSeconds,
+	const float PerfectDodgeDurationSeconds) const
 {
+	const bool bHasPerfectDodgeWindow = PerfectDodgeDurationSeconds > KINDA_SMALL_NUMBER;
+	const double WindowEndOffset = StartOffsetSeconds + DurationSeconds;
+	const double PerfectDodgeEndOffset =
+		PerfectDodgeStartOffsetSeconds + PerfectDodgeDurationSeconds;
+	const bool bPerfectDodgeWindowIsValid = !bHasPerfectDodgeWindow ||
+		(PerfectDodgeStartOffsetSeconds >= StartOffsetSeconds &&
+		 PerfectDodgeEndOffset <= WindowEndOffset &&
+		 (PerfectDodgeStartOffsetSeconds > StartOffsetSeconds ||
+		  PerfectDodgeEndOffset < WindowEndOffset));
+
 	return !CurrentWindow.IsValid() &&
 		!WindowTags.IsEmpty() &&
 		StartOffsetSeconds >= 0.0f &&
 		DurationSeconds > KINDA_SMALL_NUMBER &&
+		PerfectDodgeStartOffsetSeconds >= 0.0f &&
+		PerfectDodgeDurationSeconds >= 0.0f &&
+		bPerfectDodgeWindowIsValid &&
 		ResolveAbilitySystemComponent() != nullptr;
 }
 
@@ -50,12 +65,19 @@ FCombatDefenseWindowHandle UCombatDefenseComponent::BeginDodgeWindow(
 	const FGameplayTagContainer& WindowTags,
 	const float StartOffsetSeconds,
 	const float DurationSeconds,
-	const double ExecutionStartWorldTime)
+	const double ExecutionStartWorldTime,
+	const float PerfectDodgeStartOffsetSeconds,
+	const float PerfectDodgeDurationSeconds)
 {
 	FCombatDefenseWindowHandle StartedWindow;
 
 	if (!IsValid(Source) ||
-		!CanBeginDodgeWindow(WindowTags, StartOffsetSeconds, DurationSeconds))
+		!CanBeginDodgeWindow(
+			WindowTags,
+			StartOffsetSeconds,
+			DurationSeconds,
+			PerfectDodgeStartOffsetSeconds,
+			PerfectDodgeDurationSeconds))
 	{
 		return StartedWindow;
 	}
@@ -66,6 +88,15 @@ FCombatDefenseWindowHandle UCombatDefenseComponent::BeginDodgeWindow(
 	ConfiguredWindowTags = WindowTags;
 	WindowStartWorldTime = ExecutionStartWorldTime + StartOffsetSeconds;
 	WindowEndWorldTime = WindowStartWorldTime + DurationSeconds;
+	bPerfectDodgeConsumed = false;
+
+	if (PerfectDodgeDurationSeconds > KINDA_SMALL_NUMBER)
+	{
+		PerfectDodgeWindowStartWorldTime =
+			ExecutionStartWorldTime + PerfectDodgeStartOffsetSeconds;
+		PerfectDodgeWindowEndWorldTime =
+			PerfectDodgeWindowStartWorldTime + PerfectDodgeDurationSeconds;
+	}
 
 	SetComponentTickEnabled(true);
 
@@ -99,8 +130,16 @@ void UCombatDefenseComponent::EndDodgeWindow(const FCombatDefenseWindowHandle Ha
 	ConfiguredWindowTags.Reset();
 	WindowStartWorldTime = 0.0;
 	WindowEndWorldTime = 0.0;
+	PerfectDodgeWindowStartWorldTime = 0.0;
+	PerfectDodgeWindowEndWorldTime = 0.0;
+	bPerfectDodgeConsumed = false;
 	SetComponentTickEnabled(false);
 	DeactivateWindowTags();
+}
+
+void UCombatDefenseComponent::ResetDefenseState()
+{
+	EndDodgeWindow(CurrentWindow);
 }
 
 bool UCombatDefenseComponent::OwnsWindow(const FCombatDefenseWindowHandle Handle) const
@@ -118,6 +157,23 @@ bool UCombatDefenseComponent::IsDodgeWindowActiveAt(
 		ConfiguredWindowTags.HasTagExact(Tag) &&
 		WorldTimeSeconds >= WindowStartWorldTime &&
 		WorldTimeSeconds < WindowEndWorldTime;
+}
+
+bool UCombatDefenseComponent::TryConsumePerfectDodge(
+	const FGameplayTag& Tag,
+	const double WorldTimeSeconds)
+{
+	if (bPerfectDodgeConsumed ||
+		!IsDodgeWindowActiveAt(Tag, WorldTimeSeconds) ||
+		PerfectDodgeWindowEndWorldTime <= PerfectDodgeWindowStartWorldTime ||
+		WorldTimeSeconds < PerfectDodgeWindowStartWorldTime ||
+		WorldTimeSeconds >= PerfectDodgeWindowEndWorldTime)
+	{
+		return false;
+	}
+
+	bPerfectDodgeConsumed = true;
+	return true;
 }
 
 bool UCombatDefenseComponent::IsWindowTagApplied(const FGameplayTag& Tag) const

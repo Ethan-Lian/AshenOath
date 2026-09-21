@@ -42,6 +42,7 @@ public:
 
 	FCombatMeleeSessionHandle BeginSession(
 		TSubclassOf<UGameplayEffect> DamageEffect,
+		bool bCanTriggerPerfectDodge,
 		float TraceRadius,
 		const TArray<FName>& TraceBones,
 		USkeletalMeshComponent* SourceMesh,
@@ -51,6 +52,8 @@ public:
 	);
 
 	void EndSession(const FCombatMeleeSessionHandle& SessionHandle);
+	// Force-clears the currently owned session during terminal-state cleanup.
+	void ResetCombatState();
 	bool IsSessionActive(const FCombatMeleeSessionHandle& SessionHandle) const;
 	bool HasActiveSession() const;
 
@@ -143,6 +146,7 @@ private:
 
 	TArray<FName> ActiveMeleeTraceBones;
 	float ActiveMeleeTraceRadius = 0.0f;
+	bool bActiveDamageCanTriggerPerfectDodge = false;
 
 	// Identifies which detection session owns the current melee snapshot.
 	int32 ActiveSessionInstanceId = 0;
