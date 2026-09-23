@@ -1,16 +1,19 @@
 # 战斗动作与伤害
 
-当前实现由 GameplayAbility 驱动玩家单段轻击、前/后闪避和 Boss 单次挥击，并已接入普通/完美闪避判定、基础受击与死亡清理。共享 `UCombatActionData` 只保存配置，不保存执行状态；旧 `UCombatActionComponent` 及其执行句柄已经删除。
+当前实现由 GameplayAbility 驱动玩家轻击连招、蓄力重击、前/后闪避和 Boss 单次挥击，并已接入普通/完美闪避判定、基础受击与死亡清理。共享 `UCombatActionData` 只保存配置，不保存执行状态；旧 `UCombatActionComponent` 及其执行句柄已经删除。
 
 ## 职责边界
 
 | 对象 | 当前职责 |
 |---|---|
 | `UAshenOathCombatAbility` | 共享动作互斥、ActionData Cost 检查/应用和成功消耗通知；不包含攻击或闪避分支 |
-| `UAshenOathLightAttackAbility` | 拥有一次轻击的激活、互斥、Montage Task、Cost 提交、Melee 会话和统一结束流程 |
-| `UAshenOathDodgeAbility` | 拥有一次闪避的方向快照、Montage、Cost、位移 Task、Defense 窗口和统一结束流程 |
+| `UAshenOathMeleeAttackAbility` | 玩家近战 Ability 的抽象执行层；拥有 Montage Task、动画来源身份、Cost 提交、Melee 会话和统一结束流程，不包含连招或蓄力状态 |
+| `UAshenOathComboAttackAbility` | 直接承载轻击连招；拥有 Combo Window、重复输入消费和 Montage Section 推进 |
+| `UAshenOathHeavyAttackAbility` | 与 Combo 并列继承 MeleeAttack；拥有按下、蓄力消耗、释放、伤害倍率和自动瞄准 |
+| `UAshenOathDodgeAbility` | 拥有一次闪避的方向/朝向策略快照、Montage、Cost、Travel/Recovery Task、Defense 窗口和统一结束流程 |
 | `UAshenOathBossSingleSwingAbility` | 拥有一次 Boss 挥击的 Montage、Melee 会话、Cost 提交与统一结束流程；不决定接近、恢复或下一招 |
 | `UAbilityTask_ApplyCombatMovement` | 按动作时间执行 Sweep 位移，接管并恢复 MovementMode/RootMotionMode |
+| `UAshenOathAbilityTask_RecoverFacing` | 在闪避末段按目标 Actor 的实时位置平滑恢复锁定朝向；目标失效或 Ability 结束时随即清理 |
 | `UCombatDefenseComponent` | 保存普通/完美闪避窗口、来源句柄和单次消费状态，仅增加/移除自己持有的窗口 Tag |
 | `UAshenOathStaminaRecoveryComponent` | 保存跨动作的延迟计时器和恢复 Effect；成功消耗重启，拒绝请求不触碰 |
 | `UCombatMeleeComponent` | 保存本次攻击的配置与动画来源快照；验证 Notify 来源，连续扫掠并在窗口内去重 |
@@ -64,7 +67,11 @@ Controller 保存最近的二维移动意图；按下闪避时 Character 选择�
 | `DA_Player_Dodge_Fwd` | 450 cm | 0.48 s | 0.10～0.40 s |
 | `DA_Player_Dodge_Bwd` | 360 cm | 0.42 s | 0.09～0.37 s |
 
-角色为前后配置分别持有一个 AbilitySpec，两者复用同一 Dodge Ability 类，并用 Spec 的 SourceObject 指向各自 ActionData。Character 在激活前把输入转换为世界方向，Ability 激活时立即复制，后续视角和输入变化不改变本次闪避。
+角色为前后配置分别持有一个 AbilitySpec，两者复用同一 Dodge Ability 类，并用 Spec 的 SourceObject 指向各自 ActionData。Character 在激活前把输入转换为世界方向，并同时选择朝向策略；侧向、前向和斜向前翻朝位移方向转身，后向输入使用后翻资源并保持当前目标朝向。Ability 激活时立即复制两项参数，后续视角和输入变化不改变本次闪避。
+
+闪避在整个 Ability 生命周期持有 `State.MovementLocked`，阻止自由移动或锁定系统与 Dodge 同时改变身体朝向。动作事务建立后，需要对齐的前/侧翻先进入 Travel：角色朝向冻结的位移方向，代码位移沿同一方向执行；到达 `MovementStartTime + MovementDuration` 后进入 Recovery，独立 Task 从当时朝向开始，以 SmoothStep 沿最短 Yaw 路径逐帧转向锁定目标的实时方位。恢复时长由 Dodge Ability 的 `FacingRecoveryDuration` 配置，默认 `0.4s`，不随位移时长缩短。没有锁定目标时只执行 Travel；后撤翻滚使用 `PreserveCurrentFacing`，始终不创建 Recovery。镜头可继续追踪锁定目标。
+
+Travel 与 Recovery 顺序执行，恢复利用 Montage 的落地尾段；该分界由位移配置决定，不检测动画脚部触地。调整 Montage 的 StartSection、播放速率或位移配置时，应保证实际剩余播放时间覆盖 Recovery。Montage 仍拥有正常结束语义，不为回正延长动作锁定；提前结束或中断会清理未完成的恢复，不强制跳到目标朝向。结束或取消时 GAS 销毁两个 Task 并移除 `State.MovementLocked`，Character 再接回自由移动或锁定朝向控制权。
 
 Montage 播放确认且 Cost 提交成功后，Ability 以同一个世界时间创建 Defense 窗口和位移 Task。Task 在整段执行期间忽略动画根位移，位移段临时切换 MovementMode，通过 `SafeMoveUpdatedComponent` 逐帧 Sweep；墙体只允许碰撞有效的位移量，结束或中断恢复先前模式。
 

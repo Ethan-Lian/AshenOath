@@ -1,12 +1,14 @@
 #include "AbilitySystem/Ability/AshenOathDodgeAbility.h"
 
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
+#include "AbilitySystem/Tasks/AshenOathAbilityTask_RecoverFacing.h"
 #include "AbilitySystemComponent.h"
 #include "Actions/CombatActionData.h"
 #include "Animation/AnimMontage.h"
 #include "Defense/CombatDefenseComponent.h"
 #include "GameplayTags/AshenOathGameplayTags.h"
 #include "Tasks/AbilityTask_ApplyCombatMovement.h"
+#include "Targeting/CombatTargetingComponent.h"
 
 UAshenOathDodgeAbility::UAshenOathDodgeAbility()
 {
@@ -14,12 +16,16 @@ UAshenOathDodgeAbility::UAshenOathDodgeAbility()
 	AssetTags.AddTag(AshenOathGameplayTags::Ability_Action);
 	AssetTags.AddTag(AshenOathGameplayTags::Ability_Action_Dodge);
 	SetAssetTags(AssetTags);
+
+	ActivationOwnedTags.AddTag(AshenOathGameplayTags::State_MovementLocked);
 }
 
 bool UAshenOathDodgeAbility::TryActivateWithMovementDirection(
-	const FVector& WorldDirection)
+	const FVector& WorldDirection,
+	const EAshenOathDodgeFacingMode FacingMode)
 {
 	PendingMovementDirection = WorldDirection.GetSafeNormal2D();
+	PendingFacingMode = FacingMode;
 
 	UAbilitySystemComponent* AbilitySystemComponent = GetAbilitySystemComponentFromActorInfo();
 	const FGameplayAbilitySpecHandle SpecHandle = GetCurrentAbilitySpecHandle();
@@ -28,15 +34,21 @@ bool UAshenOathDodgeAbility::TryActivateWithMovementDirection(
 		AbilitySystemComponent->TryActivateAbility(SpecHandle);
 
 	PendingMovementDirection = FVector::ZeroVector;
+	PendingFacingMode = EAshenOathDodgeFacingMode::PreserveCurrentFacing;
 	return bActivationAccepted;
 }
 
 #if WITH_DEV_AUTOMATION_TESTS
-void UAshenOathDodgeAbility::TickMovementTaskForTesting(const float DeltaTime)
+void UAshenOathDodgeAbility::TickTasksForTesting(const float DeltaTime)
 {
 	if (MovementTask)
 	{
 		MovementTask->TickTask(DeltaTime);
+	}
+
+	if (FacingRecoveryTask)
+	{
+		FacingRecoveryTask->TickTask(DeltaTime);
 	}
 }
 #endif
@@ -73,7 +85,9 @@ void UAshenOathDodgeAbility::ActivateAbility(
 {
 	const UCombatActionData* ActionData = ResolveActionData(Handle, ActorInfo);
 	ActiveMovementDirection = PendingMovementDirection;
+	ActiveFacingMode = PendingFacingMode;
 	PendingMovementDirection = FVector::ZeroVector;
+	PendingFacingMode = EAshenOathDodgeFacingMode::PreserveCurrentFacing;
 
 	if (!IsActionDataReady(ActionData, ActorInfo, ActiveMovementDirection))
 	{
@@ -184,6 +198,42 @@ void UAshenOathDodgeAbility::ActivateAbility(
 		}
 		return;
 	}
+
+	ApplyActiveFacing(ActorInfo);
+
+	AActor* FacingTarget = ActiveFacingMode ==
+		EAshenOathDodgeFacingMode::FaceMovementDirection
+		? ResolveFacingTarget(ActorInfo)
+		: nullptr;
+	if (FacingTarget)
+	{
+		const float RecoveryStartOffset = ActionData->MovementStartTime +
+			ActionData->MovementDuration;
+		UAshenOathAbilityTask_RecoverFacing* NewFacingRecoveryTask =
+			UAshenOathAbilityTask_RecoverFacing::RecoverFacing(
+				this,
+				TEXT("DodgeFacingRecovery"),
+				FacingTarget,
+				RecoveryStartOffset,
+				FacingRecoveryDuration,
+				ExecutionStartWorldTime
+			);
+
+		if (!NewFacingRecoveryTask)
+		{
+			FinishAbility(true);
+			return;
+		}
+
+		FacingRecoveryTask = NewFacingRecoveryTask;
+		NewFacingRecoveryTask->ReadyForActivation();
+
+		if (!IsActive())
+		{
+			return;
+		}
+	}
+
 	UAbilityTask_ApplyCombatMovement* NewMovementTask =
 		UAbilityTask_ApplyCombatMovement::ApplyCombatMovement(
 			this,
@@ -225,8 +275,11 @@ void UAshenOathDodgeAbility::EndAbility(
 	ActiveDefenseComponent.Reset();
 	MontageTask = nullptr;
 	MovementTask = nullptr;
+	FacingRecoveryTask = nullptr;
 	ActiveMovementDirection = FVector::ZeroVector;
 	PendingMovementDirection = FVector::ZeroVector;
+	ActiveFacingMode = EAshenOathDodgeFacingMode::PreserveCurrentFacing;
+	PendingFacingMode = EAshenOathDodgeFacingMode::PreserveCurrentFacing;
 	ResetCostApplicationResult();
 
 	if (Defense)
@@ -254,6 +307,8 @@ bool UAshenOathDodgeAbility::IsActionDataReady(
 		ActionData->MovementDistance <= KINDA_SMALL_NUMBER ||
 		ActionData->MovementStartTime < 0.0f ||
 		ActionData->MovementDuration <= KINDA_SMALL_NUMBER ||
+		!FMath::IsFinite(FacingRecoveryDuration) ||
+		FacingRecoveryDuration <= KINDA_SMALL_NUMBER ||
 		MovementDirection.SizeSquared2D() <= SMALL_NUMBER ||
 		ActionData->WindowStartTime < 0.0f ||
 		ActionData->WindowDuration <= KINDA_SMALL_NUMBER ||
@@ -291,6 +346,34 @@ UCombatDefenseComponent* UAshenOathDodgeAbility::ResolveDefenseComponent(
 	return IsValid(AvatarActor)
 		? AvatarActor->FindComponentByClass<UCombatDefenseComponent>()
 		: nullptr;
+}
+
+AActor* UAshenOathDodgeAbility::ResolveFacingTarget(
+	const FGameplayAbilityActorInfo* ActorInfo) const
+{
+	AActor* AvatarActor = ActorInfo ? ActorInfo->AvatarActor.Get() : nullptr;
+	const UCombatTargetingComponent* Targeting = IsValid(AvatarActor)
+		? AvatarActor->FindComponentByClass<UCombatTargetingComponent>()
+		: nullptr;
+	return Targeting ? Targeting->GetTarget() : nullptr;
+}
+
+void UAshenOathDodgeAbility::ApplyActiveFacing(
+	const FGameplayAbilityActorInfo* ActorInfo) const
+{
+	if (ActiveFacingMode != EAshenOathDodgeFacingMode::FaceMovementDirection)
+	{
+		return;
+	}
+
+	AActor* AvatarActor = ActorInfo ? ActorInfo->AvatarActor.Get() : nullptr;
+	if (!IsValid(AvatarActor) || AvatarActor->IsActorBeingDestroyed())
+	{
+		return;
+	}
+
+	const float DesiredYaw = ActiveMovementDirection.Rotation().Yaw;
+	AvatarActor->SetActorRotation(FRotator(0.0f, DesiredYaw, 0.0f));
 }
 
 void UAshenOathDodgeAbility::HandleMontageCompleted()

@@ -9,9 +9,15 @@ namespace AshenOathGameplayTags
 	);
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
-		Ability_Action_LightAttack,
-		"Ability.Action.LightAttack",
-		"Identifies the player's light-attack ability."
+		Ability_Action_ComboAttack,
+		"Ability.Action.ComboAttack",
+		"Identifies the player's combo-attack ability."
+	);
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Action_HeavyAttack,
+		"Ability.Action.HeavyAttack",
+		"Identifies the player's heavy and charged-heavy ability."
 	);
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
@@ -25,6 +31,19 @@ namespace AshenOathGameplayTags
 		"Ability.Action.BossSingleSwing",
 		"Identifies the Boss single-swing combat ability."
 	);
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Data_Cost_Stamina,
+		"Data.Cost.Stamina",
+		"SetByCaller magnitude for an action-authored Stamina change."
+	);
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Data_Damage,
+		"Data.Damage",
+		"SetByCaller magnitude for an action-authored Health change."
+	);
+
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
 		State_Dead,
 		"State.Dead",

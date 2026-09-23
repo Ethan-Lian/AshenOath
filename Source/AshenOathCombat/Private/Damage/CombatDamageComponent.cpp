@@ -58,6 +58,14 @@ ECombatDamageResult UCombatDamageComponent::ApplyDamageAttempt(const FCombatDama
 		return ECombatDamageResult::Invalid;
 	}
 
+	if (Attempt.SetByCallerMagnitudeTag.IsValid())
+	{
+		EffectSpec.Data->SetSetByCallerMagnitude(
+			Attempt.SetByCallerMagnitudeTag,
+			Attempt.SetByCallerMagnitude
+		);
+	}
+
 	const FActiveGameplayEffectHandle AppliedHandle =
 	SourceAbilitySystemComponent->ApplyGameplayEffectSpecToTarget(*EffectSpec.Data.Get(), TargetAbilitySystemComponent);
 

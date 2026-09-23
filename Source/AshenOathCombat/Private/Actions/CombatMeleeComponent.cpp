@@ -84,7 +84,9 @@ FCombatMeleeSessionHandle UCombatMeleeComponent::BeginSession(
 	USkeletalMeshComponent* SourceMesh,
 	UAnimInstance* SourceAnimInstance,
 	UAnimMontage* SourceMontage,
-	const int32 MontageInstanceId)
+	const int32 MontageInstanceId,
+	const FGameplayTag SetByCallerMagnitudeTag,
+	const float SetByCallerMagnitude)
 {
 	FCombatMeleeSessionHandle SessionHandle;
 
@@ -121,6 +123,8 @@ FCombatMeleeSessionHandle UCombatMeleeComponent::BeginSession(
 	ActiveSourceAnimInstance = SourceAnimInstance;
 	ActiveSourceMontage = SourceMontage;
 	ActiveDamageEffect = DamageEffect;
+	ActiveSetByCallerMagnitudeTag = SetByCallerMagnitudeTag;
+	ActiveSetByCallerMagnitude = SetByCallerMagnitude;
 	bActiveDamageCanTriggerPerfectDodge = bCanTriggerPerfectDodge;
 	ActiveMeleeTraceRadius = TraceRadius;
 	ActiveMeleeTraceBones = TraceBones;
@@ -363,6 +367,8 @@ void UCombatMeleeComponent::ResetSession()
 	ActiveSourceAnimInstance.Reset();
 	ActiveSourceMontage.Reset();
 	ActiveDamageEffect = nullptr;
+	ActiveSetByCallerMagnitudeTag = FGameplayTag();
+	ActiveSetByCallerMagnitude = 0.0f;
 	bActiveDamageCanTriggerPerfectDodge = false;
 	ActiveMeleeTraceRadius = 0.0f;
 	ActiveMeleeTraceBones.Reset();
@@ -460,6 +466,8 @@ void UCombatMeleeComponent::SubmitMeleeHit(
 	DamageAttempt.DamageEffect = ActiveDamageEffect;
 	DamageAttempt.HitTimeSeconds = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
 	DamageAttempt.bCanTriggerPerfectDodge = bActiveDamageCanTriggerPerfectDodge;
+	DamageAttempt.SetByCallerMagnitudeTag = ActiveSetByCallerMagnitudeTag;
+	DamageAttempt.SetByCallerMagnitude = ActiveSetByCallerMagnitude;
 
 	DamageComponent->ApplyDamageAttempt(DamageAttempt);
 }

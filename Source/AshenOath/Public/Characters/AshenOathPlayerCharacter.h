@@ -17,11 +17,14 @@ class UCombatDefenseComponent;
 class UCombatMeleeComponent;
 struct FGameplayTag;
 class UGameplayAbility;
-class UAshenOathLightAttackAbility;
+class UAshenOathComboAttackAbility;
+class UAshenOathHeavyAttackAbility;
+class UAshenOathHeavyAttackData;
 class UAshenOathDodgeAbility;
 class UAshenOathStaminaRecoveryComponent;
 class UCombatHitReactionComponent;
 class UCombatDeathComponent;
+class UCombatTargetingComponent;
 
 /**
  * Player-side GAS host, movement and combat actions.
@@ -43,17 +46,34 @@ public:
 
 	// True means GAS accepted the activation request. It does not mean the
 	// animation/cost/damage transaction has already completed.
-	bool RequestLightAttack();
+	bool RequestComboAttack();
+
+	// Press starts the tap-or-hold decision; release resolves the active Heavy
+	// Ability without exposing its internal phase to the Controller.
+	bool RequestHeavyAttackPressed();
+	bool RequestHeavyAttackReleased();
 
 	// Selects the forward/backward AbilitySpec and freezes a world-space direction.
 	// True means GAS accepted the activation request; completion remains asynchronous.
 	bool RequestDodge(const FVector2D& MovementIntent);
 
+	// Toggles the currently registered Boss as the lock target; true means the
+	// target changed successfully.
+	bool RequestToggleLockOn();
+
+	// Clears the current lock target, if any.
+	void RequestClearLockOn();
+
+	// Returns whether a valid lock target is currently owned.
+	bool IsLockedOn() const;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void Tick(float DeltaSeconds) override;
 
 	virtual void PossessedBy(AController* NewController) override;
+	virtual void UnPossessed() override;
 
 private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AshenOath|AbilitySystem",
@@ -92,21 +112,34 @@ private:
 		meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UCombatDeathComponent> DeathComponent;
 
-	// Immutable configuration supplied to the granted light-attack AbilitySpec.
+	// Immutable configuration supplied to the granted combo-attack AbilitySpec.
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat")
-	TObjectPtr<UCombatActionData> LightAttackAction;
+	TObjectPtr<UCombatActionData> ComboAttackAction;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Abilities")
-	TSubclassOf<UAshenOathLightAttackAbility> LightAttackAbilityClass;
+	TSubclassOf<UAshenOathComboAttackAbility> ComboAttackAbilityClass;
 
 	// Identifies the granted spec, not an individual execution.
-	FGameplayAbilitySpecHandle LightAttackAbilitySpecHandle;
+	FGameplayAbilitySpecHandle ComboAttackAbilitySpecHandle;
+
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Heavy Attack")
+	TObjectPtr<UAshenOathHeavyAttackData> HeavyAttackAction;
+
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Abilities")
+	TSubclassOf<UAshenOathHeavyAttackAbility> HeavyAttackAbilityClass;
+
+	FGameplayAbilitySpecHandle HeavyAttackAbilitySpecHandle;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Dodge")
 	TObjectPtr<UCombatActionData> ForwardDodgeAction;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Dodge")
 	TObjectPtr<UCombatActionData> BackwardDodgeAction;
+
+	// Biases locked lateral dodges toward the target; sampled only at activation.
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Dodge",
+		meta = (ClampMin = "0.0", ClampMax = "45.0", Units = "deg"))
+	float LockedSideDodgeInwardAngle = 15.0f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Abilities")
 	TSubclassOf<UAshenOathDodgeAbility> DodgeAbilityClass;
@@ -130,16 +163,30 @@ private:
 	UPROPERTY(VisibleAnywhere, Category = "AshenOath|Camera")
 	TObjectPtr<UCameraComponent> FollowCamera;
 
+	// Owns target identity and validity; movement/camera consume its state.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AshenOath|Lock On",
+		meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UCombatTargetingComponent> CombatTargetingComponent;
+
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Lock On",
+		meta = (ClampMin = "0.0"))
+	float LockOnViewInterpSpeed = 8.0f;
+
 	// PossessedBy may run again after repossession; initial stats are applied only once.
 	bool bInitialAttributesApplied = false;
 	FDelegateHandle DeathStartedHandle;
 	FDelegateHandle MovementLockedStateChangedHandle;
+	FDelegateHandle StaggeredStateChangedHandle;
+	FDelegateHandle LockTargetChangedHandle;
 
 	// Applies the startup GameplayEffect that establishes initial attribute values.
 	void ApplyInitialAttributes();
 
 	void HandleDeathStarted();
 	void HandleMovementLockedStateChanged(const FGameplayTag Tag, int32 NewCount);
+	void HandleLockTargetChanged(AActor* PreviousTarget, AActor* NewTarget);
+	void UpdateLockedView(float DeltaSeconds);
+	void RefreshFacingMode();
 
 	void GrantConfiguredAbilities();
 	void GrantAbilityIfNeeded(

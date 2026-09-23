@@ -2,6 +2,7 @@
 
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Targeting/CombatTargetingComponent.h"
 
 namespace AshenOathLocomotion
 {
@@ -46,6 +47,8 @@ void UAshenOathCharacterAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	GroundSpeed = HorizontalVelocity.Size();
 	bIsMoving = GroundSpeed > AshenOathLocomotion::MovingSpeedThreshold;
 	bIsInAir = MovementComponent->IsFalling();
+	bIsLockedOn = CachedTargetingComponent.IsValid() &&
+		CachedTargetingComponent->HasTarget();
 
 	if (!bIsMoving)
 	{
@@ -67,6 +70,7 @@ void UAshenOathCharacterAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 
 void UAshenOathCharacterAnimInstance::NativeUninitializeAnimation()
 {
+	CachedTargetingComponent.Reset();
 	CachedMovementComponent.Reset();
 	CachedCharacter.Reset();
 	ResetLocomotionData();
@@ -81,6 +85,9 @@ void UAshenOathCharacterAnimInstance::RefreshOwnerReferences()
 	CachedCharacter = Character;
 	
 	CachedMovementComponent = Character? Character->GetCharacterMovement() : nullptr;
+	CachedTargetingComponent = Character
+		? Character->FindComponentByClass<UCombatTargetingComponent>()
+		: nullptr;
 }
 
 void UAshenOathCharacterAnimInstance::ResetLocomotionData()
@@ -89,4 +96,5 @@ void UAshenOathCharacterAnimInstance::ResetLocomotionData()
 	MovementDirection = 0.0f;
 	bIsInAir = false;
 	bIsMoving = false;
+	bIsLockedOn = false;
 }

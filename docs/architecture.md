@@ -15,12 +15,13 @@ flowchart TD
     PC -->|轻击 / 闪避请求| P
     P -->|AddMovementInput| CM[CharacterMovement]
     P -->|TryActivateAbility：轻击 / 前后闪避| GAS[玩家 ASC / AttributeSet]
-    GAS --> ATTACK[LightAttack GameplayAbility]
+    GAS --> ATTACK[ComboAttack GameplayAbility]
     GAS --> DODGE[Dodge GameplayAbility]
     ATTACK -->|PlayMontageAndWait| AN[Character AnimInstance]
     ATTACK -->|配置快照与播放实例| MELEE[CombatMelee]
     AN -->|带 Montage 实例 ID 的 Notify| MELEE
-    DODGE -->|代码位移 Task| CM
+    DODGE -->|Travel：代码位移 Task| CM
+    DODGE -->|Recovery：锁定目标朝向 Task| P
     DODGE -->|时间窗口与来源句柄| DEFENSE[CombatDefense]
     DEFENSE -->|仅自己持有的一层无敌 Tag| GAS
     GAS -->|成功消耗通知| RECOVERY[StaminaRecovery]
@@ -53,9 +54,12 @@ flowchart TD
 | Boss Character | ASC、AttributeSet、StateTreeComponent、单次挥击 AbilitySpec | 协调初始化和退出顺序；向 StateTree 提供请求、取消和对应 Ability 结束通知，不播放动画或执行选招评分 |
 | AttributeSet | Health、MaxHealth、Stamina、MaxStamina | 只维护数值范围；Death 组件观察 Health 并拥有终止转换 |
 | Combat GameplayAbility 基类 | 动作互斥、ActionData Cost 检查/应用与成功消耗通知 | 只共享 GAS 事务，不编排具体攻击或闪避 |
-| LightAttack GameplayAbility | 一次轻击的激活互斥、Montage Task、Cost 提交及 Melee 会话协调 | Montage 启动后才提交费用；结束、中断、失败统一经 `EndAbility` 释放会话 |
-| Dodge GameplayAbility | 一次闪避的方向快照、Montage、Cost、位移 Task 与 Defense 窗口协调 | 前后配置由两个 AbilitySpec 的 SourceObject 区分；玩法状态只在费用成功后建立 |
+| MeleeAttack GameplayAbility 基类 | 玩家近战共用的 Montage Task、Cost 提交、动画来源身份、Melee 会话和清理 | 不决定具体输入语义、连招规则或蓄力阶段；结束、中断、失败统一经 `EndAbility` 释放会话 |
+| ComboAttack GameplayAbility | 轻击连招激活、Combo Window 输入消费及 Montage Section 推进 | 直接作为轻击 Ability 授予；只有所属动画窗口接受的重复输入才能推进下一段 |
+| HeavyAttack GameplayAbility | 按下、蓄力消耗、松开/满蓄释放及伤害倍率 | 与 Combo 并列复用 MeleeAttack 生命周期，不继承连招状态 |
+| Dodge GameplayAbility | 一次闪避的方向/朝向策略快照、Montage、Cost、Travel/Recovery Task 与 Defense 窗口协调 | 前后配置由两个 AbilitySpec 的 SourceObject 区分；玩法状态只在费用成功后建立 |
 | CombatMovement AbilityTask | 一次代码位移的时间进度、MovementMode 与 RootMotionMode 接管 | Sweep 受阻自然截断；完成、取消和失败均恢复接管状态 |
+| DodgeFacingRecovery AbilityTask | 在闪避末段按实时目标方位把角色从位移朝向平滑带回锁定朝向 | 位于项目模块，只读取通用 Targeting 提供的目标 Actor；不进入 Combat 模块 |
 | CombatDefense | 普通/完美闪避窗口、来源句柄和自己施加的 loose Tag | 完美窗口必须是普通窗口的真子集且一次闪避最多消费一次；死亡时可整体复位 |
 | StaminaRecovery | 延迟计时器及自己施加的周期恢复 Effect | 跨越多次动作；只有成功消耗重启，死亡和退出停止 |
 | CombatMelee | 伤害配置快照、播放来源身份、武器扫掠、Notify 窗口和窗口内去重 | 不查找当前 Ability；只接受所属 Mesh、AnimInstance、Montage 实例的信号并提交中立伤害尝试 |
@@ -71,9 +75,9 @@ flowchart TD
 
 **移动到动画**：Move Input → Controller 转发意图与参考 Yaw → Character 验证约束并转换方向 → CharacterMovement 执行移动 → AnimInstance 读取实际速度。
 
-**轻击到伤害**：Attack Input → Character 请求已授予的轻击 Ability → Montage Task 确认播放 → Melee 保存配置与播放实例快照 → GAS 提交一次 Cost → Notify 携带 Montage 实例 ID 开窗/扫掠 → 目标 CombatDamage 经 GAS 应用伤害。任何失败或中断先释放 Melee 会话，再由 Task 停止 Montage。
+**轻击到伤害**：Attack Input → Character 请求已授予的 ComboAttack Ability → MeleeAttack 基类确认 Montage 播放并保存实例身份 → Melee 保存配置与播放实例快照 → GAS 提交一次 Cost → Combo Window 接受重复输入并选择下一 Section，Hit Notify 携带 Montage 实例 ID 开窗/扫掠 → 目标 CombatDamage 经 GAS 应用伤害。任何失败或中断先释放 Melee 会话，再由 Task 停止 Montage。
 
-**闪避到清理**：Dodge Input → Character 选择前/后 AbilitySpec 并冻结世界方向 → Dodge Ability 启动 Montage → 提交一次 Cost → Defense 建立窗口、Movement Task 执行 Sweep 位移 → `EndAbility` 释放 Defense，GAS 销毁 Task 并恢复移动/根位移模式。成功消耗独立通知 StaminaRecovery 重启延迟；拒绝请求不影响已有恢复。详见 [战斗动作与伤害](systems/combat-actions.md)。
+**闪避到清理**：Dodge Input → Character 选择前/后 AbilitySpec 并冻结世界方向/朝向策略 → Dodge Ability 启动 Montage → 提交一次 Cost → Defense 建立窗口、Movement Task 执行 Sweep 位移 → 锁定状态下的前/侧翻在位移结束后由 FacingRecovery Task 按独立时长平滑回正 → `EndAbility` 释放 Defense，GAS 销毁 Task 并恢复移动/根位移模式。后撤翻滚保持面向目标，不创建 Recovery Task。成功消耗独立通知 StaminaRecovery 重启延迟；拒绝请求不影响已有恢复。详见 [战斗动作与伤害](systems/combat-actions.md)。
 
 **伤害到受击/死亡**：CombatDamage 先拒绝终止目标和无敌命中；合格攻击在完美窗口内被拒绝时返回一次 `PerfectDodge`。成功伤害广播 `Applied`，HitReaction 取消可中断动作并短暂硬直；Health 归零时 CombatDeath 先添加 Dead Tag，再通知宿主停止动作、窗口、恢复、AI 与移动，最后向 GameMode 报告胜负。
 

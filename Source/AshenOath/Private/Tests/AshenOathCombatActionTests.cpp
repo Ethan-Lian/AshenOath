@@ -21,6 +21,7 @@
 #include "GameplayEffectTypes.h"
 #include "GameplayTags/AshenOathGameplayTags.h"
 #include "Misc/AutomationTest.h"
+#include "Targeting/CombatTargetingComponent.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FAshenOathDodgeAbilityLifecycleTest,
@@ -77,13 +78,17 @@ bool FAshenOathDodgeAbilityLifecycleTest::RunTest(const FString& Parameters)
 	UAshenOathStaminaRecoveryComponent* Recovery =
 		Player->FindComponentByClass<UAshenOathStaminaRecoveryComponent>();
 	UCharacterMovementComponent* Movement = Player->GetCharacterMovement();
+	UCombatTargetingComponent* Targeting =
+		Player->FindComponentByClass<UCombatTargetingComponent>();
 
 	TestNotNull(TEXT("Player owns CombatDefense"), Defense);
 	TestNotNull(TEXT("Player owns CombatDamage"), Damage);
 	TestNotNull(TEXT("Player owns stamina recovery"), Recovery);
 	TestNotNull(TEXT("Player owns CharacterMovement"), Movement);
+	TestNotNull(TEXT("Player owns CombatTargeting"), Targeting);
 
-	if (!PlayerAbilitySystem || !Defense || !Damage || !Recovery || !Movement)
+	if (!PlayerAbilitySystem || !Defense || !Damage || !Recovery || !Movement ||
+		!Targeting)
 	{
 		CleanupWorld();
 		return false;
@@ -153,7 +158,7 @@ bool FAshenOathDodgeAbilityLifecycleTest::RunTest(const FString& Parameters)
 			// absolute world time.
 			if (UAshenOathDodgeAbility* DodgeAbility = GetActiveDodgeAbility())
 			{
-				DodgeAbility->TickMovementTaskForTesting(Step);
+				DodgeAbility->TickTasksForTesting(Step);
 			}
 			Duration -= Step;
 		}
@@ -264,11 +269,175 @@ bool FAshenOathDodgeAbilityLifecycleTest::RunTest(const FString& Parameters)
 		PlayerAbilitySystem->GetNumericAttribute(MaxStaminaAttribute)
 	);
 
+	const FRotator SideDodgeReferenceRotation(0.0f, 35.0f, 0.0f);
+	PlayerController->SetControlRotation(SideDodgeReferenceRotation);
+	Player->SetActorRotation(SideDodgeReferenceRotation);
+	Source->SetActorLocation(
+		Player->GetActorLocation() +
+		FRotationMatrix(SideDodgeReferenceRotation).GetUnitAxis(EAxis::X) * 1000.0f
+	);
+	TestTrue(
+		TEXT("Side dodge test acquires its lock target"),
+		Targeting->TrySetTarget(Source)
+	);
+	const FVector SideDodgeToTarget = FRotationMatrix(
+		SideDodgeReferenceRotation
+	).GetUnitAxis(EAxis::X);
+	const FVector ExpectedSideDodgeFacing = SideDodgeToTarget.RotateAngleAxis(
+		75.0f, FVector::UpVector
+	);
+	const FVector SideDodgeStart = Player->GetActorLocation();
+	// Camera lag and a previous action's facing must not change the lock-relative path.
+	PlayerController->SetControlRotation(FRotator(0.0f, -40.0f, 0.0f));
+	Player->SetActorRotation(FRotator(0.0f, -10.0f, 0.0f));
+	TestTrue(
+		TEXT("Side input activates a forward dodge"),
+		Player->RequestDodge(FVector2D(1.0f, 0.0f))
+	);
+	TestTrue(
+		TEXT("Locked right dodge faces 15 degrees inward from the target tangent"),
+		FVector::DotProduct(
+			Player->GetActorForwardVector(),
+			ExpectedSideDodgeFacing
+		) > 0.99f
+	);
+	TestTrue(
+		TEXT("Active dodge owns movement and facing"),
+		PlayerAbilitySystem->HasMatchingGameplayTag(
+			AshenOathGameplayTags::State_MovementLocked
+		)
+	);
+	const UCombatActionData* SideDodgeData = GetActiveDodgeData();
+	TestNotNull(TEXT("Active side dodge keeps its ActionData source"), SideDodgeData);
+	if (!SideDodgeData)
+	{
+		CleanupWorld();
+		return false;
+	}
+	Source->SetActorLocation(Source->GetActorLocation() + FVector(0.0f, 100.0f, 0.0f));
+	PlayerController->SetControlRotation(FRotator(0.0f, 120.0f, 0.0f));
+	TickWorldFor(
+		SideDodgeData->MovementStartTime +
+		SideDodgeData->MovementDuration * 0.95f
+	);
+	TestTrue(
+		TEXT("Side dodge preserves travel-facing until displacement finishes"),
+		FVector::DotProduct(
+			Player->GetActorForwardVector(), ExpectedSideDodgeFacing
+		) > 0.99f
+	);
+	TestTrue(
+		TEXT("Target and camera changes do not bend the frozen inward travel direction"),
+		FVector::DotProduct(
+			(Player->GetActorLocation() - SideDodgeStart).GetSafeNormal2D(),
+			ExpectedSideDodgeFacing
+		) > 0.99f
+	);
+	TickWorldFor(SideDodgeData->MovementDuration * 0.05f + 0.05f);
+	TestTrue(
+		TEXT("Recovery starts gently instead of immediately snapping to the target"),
+		HasActiveDodge() && FVector::DotProduct(
+			Player->GetActorForwardVector(), ExpectedSideDodgeFacing
+		) > 0.98f
+	);
+	float MaximumRecoveryYawStep = 0.0f;
+	for (int32 Frame = 0; Frame < 22; ++Frame)
+	{
+		const float PreviousYaw = Player->GetActorRotation().Yaw;
+		TickWorldFor(1.0f / 60.0f);
+		MaximumRecoveryYawStep = FMath::Max(
+			MaximumRecoveryYawStep,
+			FMath::Abs(FMath::FindDeltaAngleDegrees(
+				PreviousYaw, Player->GetActorRotation().Yaw
+			))
+		);
+	}
+	TestTrue(
+		TEXT("Side recovery avoids rapid per-frame turns at 60 FPS"),
+		MaximumRecoveryYawStep < 8.0f
+	);
+	const FVector FacingToTarget = (
+		Source->GetActorLocation() - Player->GetActorLocation()
+	).GetSafeNormal2D();
+	TestTrue(
+		TEXT("Side dodge recovers toward its lock target before Ability handoff"),
+		HasActiveDodge() &&
+		FVector::DotProduct(Player->GetActorForwardVector(), FacingToTarget) > 0.99f
+	);
+	PlayerAbilitySystem->CancelAbilities(&CombatAbilityTags);
+	Targeting->ClearTarget();
+	TestFalse(
+		TEXT("Dodge cancellation releases movement and facing ownership"),
+		PlayerAbilitySystem->HasMatchingGameplayTag(
+			AshenOathGameplayTags::State_MovementLocked
+		)
+	);
+	PlayerAbilitySystem->SetNumericAttributeBase(
+		StaminaAttribute,
+		PlayerAbilitySystem->GetNumericAttribute(MaxStaminaAttribute)
+	);
+
+	TestTrue(TEXT("Left dodge reacquires its lock target"), Targeting->TrySetTarget(Source));
+	const FVector LeftDodgeStart = Player->GetActorLocation();
+	const FVector ExpectedLeftDodgeDirection = (
+		Source->GetActorLocation() - LeftDodgeStart
+	).GetSafeNormal2D().RotateAngleAxis(-75.0f, FVector::UpVector);
+	TestTrue(
+		TEXT("Locked left input activates a dodge"),
+		Player->RequestDodge(FVector2D(-1.0f, 0.0f))
+	);
+	TickWorldFor(SideDodgeData->MovementStartTime + SideDodgeData->MovementDuration);
+	TestTrue(
+		TEXT("Locked left dodge travels 15 degrees inward on the opposite side"),
+		FVector::DotProduct(
+			(Player->GetActorLocation() - LeftDodgeStart).GetSafeNormal2D(),
+			ExpectedLeftDodgeDirection
+		) > 0.99f
+	);
+	PlayerAbilitySystem->CancelAbilities(&CombatAbilityTags);
+	Targeting->ClearTarget();
+	PlayerAbilitySystem->SetNumericAttributeBase(
+		StaminaAttribute,
+		PlayerAbilitySystem->GetNumericAttribute(MaxStaminaAttribute)
+	);
+
+	PlayerController->SetControlRotation(FRotator::ZeroRotator);
+	const FVector FreeSideDodgeStart = Player->GetActorLocation();
+	TestTrue(
+		TEXT("Unlocked side input still activates a dodge"),
+		Player->RequestDodge(FVector2D(1.0f, 0.0f))
+	);
+	TickWorldFor(SideDodgeData->MovementStartTime + SideDodgeData->MovementDuration);
+	TestTrue(
+		TEXT("Unlocked side dodge stays camera-relative without inward bias"),
+		FVector::DotProduct(
+			(Player->GetActorLocation() - FreeSideDodgeStart).GetSafeNormal2D(),
+			FVector::RightVector
+		) > 0.99f
+	);
+	PlayerAbilitySystem->CancelAbilities(&CombatAbilityTags);
+	PlayerAbilitySystem->SetNumericAttributeBase(
+		StaminaAttribute,
+		PlayerAbilitySystem->GetNumericAttribute(MaxStaminaAttribute)
+	);
+
+	const FRotator BackwardDodgeFacing(0.0f, -25.0f, 0.0f);
+	PlayerController->SetControlRotation(BackwardDodgeFacing);
+	Player->SetActorRotation(BackwardDodgeFacing);
 	const FVector BackwardDodgeStart = Player->GetActorLocation();
 	const FVector ActorForward = Player->GetActorForwardVector();
+	Source->SetActorLocation(BackwardDodgeStart + ActorForward * 1000.0f);
+	TestTrue(TEXT("Backward dodge acquires its lock target"), Targeting->TrySetTarget(Source));
 	TestTrue(
 		TEXT("Backward input activates the backward dodge spec"),
 		Player->RequestDodge(FVector2D(0.0f, -1.0f))
+	);
+	TestTrue(
+		TEXT("Backward dodge preserves target-facing"),
+		FVector::DotProduct(
+			Player->GetActorForwardVector(),
+			ActorForward
+		) > 0.99f
 	);
 	const UCombatActionData* BackwardDodgeData = GetActiveDodgeData();
 	TestNotNull(TEXT("Active backward dodge keeps its ActionData source"), BackwardDodgeData);
@@ -308,6 +477,7 @@ bool FAshenOathDodgeAbilityLifecycleTest::RunTest(const FString& Parameters)
 		TEXT("Backward dodge moved opposite the character forward vector"),
 		FVector::DotProduct(Player->GetActorLocation() - BackwardDodgeStart, ActorForward) < 0.0f
 	);
+	Targeting->ClearTarget();
 
 	AActor* Wall = World->SpawnActor<AActor>();
 	UBoxComponent* WallCollision = Wall ? NewObject<UBoxComponent>(Wall) : nullptr;

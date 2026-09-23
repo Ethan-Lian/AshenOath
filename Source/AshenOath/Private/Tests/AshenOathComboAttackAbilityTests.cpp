@@ -1,6 +1,6 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
-#include "AbilitySystem/Ability/AshenOathLightAttackAbility.h"
+#include "AbilitySystem/Ability/AshenOathComboAttackAbility.h"
 #include "AbilitySystem/AshenOathAttributeSet.h"
 #include "Characters/AshenOathBossCharacter.h"
 #include "Characters/AshenOathPlayerCharacter.h"
@@ -21,12 +21,12 @@
 #include "Misc/AutomationTest.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FAshenOathLightAttackAbilityLifecycleTest,
-	"AshenOath.Combat.Ability.LightAttackLifecycle",
+	FAshenOathComboAttackAbilityLifecycleTest,
+	"AshenOath.Combat.Ability.ComboAttackLifecycle",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter
 )
 
-bool FAshenOathLightAttackAbilityLifecycleTest::RunTest(const FString& Parameters)
+bool FAshenOathComboAttackAbilityLifecycleTest::RunTest(const FString& Parameters)
 {
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
 	FWorldContext& WorldContext = GEngine->CreateNewWorldContext(EWorldType::Game);
@@ -95,28 +95,28 @@ bool FAshenOathLightAttackAbilityLifecycleTest::RunTest(const FString& Parameter
 		return false;
 	}
 
-	FGameplayAbilitySpec* LightAttackSpec = nullptr;
+	FGameplayAbilitySpec* ComboAttackSpec = nullptr;
 
 	for (FGameplayAbilitySpec& Spec : PlayerAbilitySystem->GetActivatableAbilities())
 	{
 		if (Spec.Ability &&
 			Spec.Ability->GetAssetTags().HasTagExact(
-				AshenOathGameplayTags::Ability_Action_LightAttack))
+				AshenOathGameplayTags::Ability_Action_ComboAttack))
 		{
-			LightAttackSpec = &Spec;
+			ComboAttackSpec = &Spec;
 			break;
 		}
 	}
 
-	TestNotNull(TEXT("Possession grants the configured light attack Ability"), LightAttackSpec);
+	TestNotNull(TEXT("Possession grants the configured combo attack Ability"), ComboAttackSpec);
 
-	const UCombatActionData* ActionData = LightAttackSpec
-		? Cast<UCombatActionData>(LightAttackSpec->SourceObject.Get())
+	const UCombatActionData* ActionData = ComboAttackSpec
+		? Cast<UCombatActionData>(ComboAttackSpec->SourceObject.Get())
 		: nullptr;
 
-	TestNotNull(TEXT("The light attack Spec keeps ActionData as its source"), ActionData);
+	TestNotNull(TEXT("The combo attack Spec keeps ActionData as its source"), ActionData);
 
-	if (!LightAttackSpec || !ActionData || !ActionData->Montage ||
+	if (!ComboAttackSpec || !ActionData || !ActionData->Montage ||
 		ActionData->MeleeTraceBones.IsEmpty())
 	{
 		CleanupWorld();
@@ -137,33 +137,33 @@ bool FAshenOathLightAttackAbilityLifecycleTest::RunTest(const FString& Parameter
 
 	Movement->Velocity = FVector(300.0f, 0.0f, 0.0f);
 	Player->RequestMove(FVector2D(1.0f, 0.0f), 0.0f);
-	TestFalse(TEXT("Movement input is pending before the light attack"),
+	TestFalse(TEXT("Movement input is pending before the combo attack"),
 		Player->GetPendingMovementInputVector().IsNearlyZero());
 
-	TestTrue(TEXT("Light attack activation request is accepted"), Player->RequestLightAttack());
-	TestTrue(TEXT("The light attack Ability remains active during its Montage"), LightAttackSpec->IsActive());
-	TestTrue(TEXT("A successful light attack owns a melee session"), Melee->HasActiveSession());
-	TestTrue(TEXT("An active light attack owns the movement-lock state"),
+	TestTrue(TEXT("Combo attack activation request is accepted"), Player->RequestComboAttack());
+	TestTrue(TEXT("The combo attack Ability remains active during its Montage"), ComboAttackSpec->IsActive());
+	TestTrue(TEXT("A successful combo attack owns a melee session"), Melee->HasActiveSession());
+	TestTrue(TEXT("An active combo attack owns the movement-lock state"),
 		PlayerAbilitySystem->HasMatchingGameplayTag(AshenOathGameplayTags::State_MovementLocked));
-	TestTrue(TEXT("Starting a light attack stops existing movement"),
+	TestTrue(TEXT("Starting a combo attack stops existing movement"),
 		Movement->Velocity.IsNearlyZero());
-	TestTrue(TEXT("Starting a light attack clears pending movement input"),
+	TestTrue(TEXT("Starting a combo attack clears pending movement input"),
 		Player->GetPendingMovementInputVector().IsNearlyZero());
 
 	Player->RequestMove(FVector2D(1.0f, 0.0f), 0.0f);
-	TestTrue(TEXT("Movement requests are ignored during a light attack"),
+	TestTrue(TEXT("Movement requests are ignored during a combo attack"),
 		Player->GetPendingMovementInputVector().IsNearlyZero());
 
 	const float StaminaAfterAttack =
 		PlayerAbilitySystem->GetNumericAttribute(StaminaAttribute);
 
-	TestTrue(TEXT("A successful light attack commits one stamina cost"),
+	TestTrue(TEXT("A successful combo attack commits one stamina cost"),
 		StaminaAfterAttack < StaminaBeforeAttack);
 
 	const FAnimMontageInstance* FirstMontageInstance =
 		AnimInstance->GetActiveInstanceForMontage(ActionData->Montage);
 
-	TestNotNull(TEXT("GAS owns the configured light attack Montage"), FirstMontageInstance);
+	TestNotNull(TEXT("GAS owns the configured combo attack Montage"), FirstMontageInstance);
 
 	if (!FirstMontageInstance)
 	{
@@ -210,7 +210,7 @@ bool FAshenOathLightAttackAbilityLifecycleTest::RunTest(const FString& Parameter
 
 	const float StaminaBeforeRejectedRetrigger =
 		PlayerAbilitySystem->GetNumericAttribute(StaminaAttribute);
-	TestFalse(TEXT("An active light attack cannot retrigger"), Player->RequestLightAttack());
+	TestFalse(TEXT("An active combo attack cannot retrigger"), Player->RequestComboAttack());
 	TestEqual(TEXT("A rejected retrigger does not pay a second cost"),
 		PlayerAbilitySystem->GetNumericAttribute(StaminaAttribute),
 		StaminaBeforeRejectedRetrigger);
@@ -219,14 +219,14 @@ bool FAshenOathLightAttackAbilityLifecycleTest::RunTest(const FString& Parameter
 	CombatAbilityTags.AddTag(AshenOathGameplayTags::Ability_Action);
 	PlayerAbilitySystem->CancelAbilities(&CombatAbilityTags);
 
-	TestFalse(TEXT("Cancellation ends the light attack Ability"), LightAttackSpec->IsActive());
+	TestFalse(TEXT("Cancellation ends the combo attack Ability"), ComboAttackSpec->IsActive());
 	TestFalse(TEXT("Cancellation releases the melee session"), Melee->HasActiveSession());
 	TestFalse(TEXT("Cancellation closes the hit window"), Melee->HasActiveHitWindow());
 	TestFalse(TEXT("Cancellation releases the movement-lock state"),
 		PlayerAbilitySystem->HasMatchingGameplayTag(AshenOathGameplayTags::State_MovementLocked));
 
 	Player->RequestMove(FVector2D(1.0f, 0.0f), 0.0f);
-	TestFalse(TEXT("Movement requests resume after light-attack cancellation"),
+	TestFalse(TEXT("Movement requests resume after combo-attack cancellation"),
 		Player->GetPendingMovementInputVector().IsNearlyZero());
 	Player->ConsumeMovementInputVector();
 
@@ -236,8 +236,8 @@ bool FAshenOathLightAttackAbilityLifecycleTest::RunTest(const FString& Parameter
 		PlayerAbilitySystem->GetNumericAttribute(MaxStaminaAttribute)
 	);
 
-	TestTrue(TEXT("The light attack can activate again after cancellation"),
-		Player->RequestLightAttack());
+	TestTrue(TEXT("The combo attack can activate again after cancellation"),
+		Player->RequestComboAttack());
 
 	const FAnimMontageInstance* SecondMontageInstance =
 		AnimInstance->GetActiveInstanceForMontage(ActionData->Montage);
@@ -298,7 +298,7 @@ bool FAshenOathLightAttackAbilityLifecycleTest::RunTest(const FString& Parameter
 	PlayerAbilitySystem->SetNumericAttributeBase(StaminaAttribute, 0.0f);
 
 	TestFalse(TEXT("Insufficient stamina rejects the activation request"),
-		Player->RequestLightAttack());
+		Player->RequestComboAttack());
 	TestEqual(TEXT("Insufficient stamina is not consumed"),
 		PlayerAbilitySystem->GetNumericAttribute(StaminaAttribute),
 		0.0f);
@@ -318,7 +318,7 @@ bool FAshenOathLightAttackAbilityLifecycleTest::RunTest(const FString& Parameter
 
 	const FGameplayAbilitySpecHandle FailedPlaybackSpecHandle =
 		PlayerAbilitySystem->GiveAbility(FGameplayAbilitySpec(
-			LightAttackSpec->Ability->GetClass(),
+			ComboAttackSpec->Ability->GetClass(),
 			1,
 			INDEX_NONE,
 			FailedPlaybackData

@@ -31,6 +31,12 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat Action")
 	FName StartSection = NAME_None;
 
+	// Ordered Montage sections for actions that continue through explicit combo
+	// windows. Empty preserves the legacy single-section StartSection behavior.
+	// Runtime combo progress belongs to the executing GameplayAbility.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat Action|Combo")
+	TArray<FName> ComboSections;
+
 	// Optional instant GameplayEffect committed only after the Montage starts.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat Action|Cost")
 	TSubclassOf<UGameplayEffect> CostEffect;
