@@ -1,12 +1,12 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Actions/CombatActionData.h"
+#include "AbilitySystem/Data/AshenOathMeleeActionData.h"
 #include "AshenOathHeavyAttackData.generated.h"
 
 /** Player heavy attack configuration; runtime press/hold state stays in the Ability. */
 UCLASS(BlueprintType)
-class ASHENOATH_API UAshenOathHeavyAttackData : public UCombatActionData
+class ASHENOATH_API UAshenOathHeavyAttackData : public UAshenOathMeleeActionData
 {
 	GENERATED_BODY()
 

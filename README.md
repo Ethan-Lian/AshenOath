@@ -22,9 +22,9 @@
 
 战斗动作由具体 `GameplayAbility` 持有生命周期：
 
-- `UAshenOathMeleeAttackAbility` 统一管理玩家近战 Montage、Cost、检测会话和清理；`UAshenOathComboAttackAbility` 实现轻击连招输入与段落推进。
+- `UAshenOathMeleeAttackAbility` 统一管理玩家与 Boss 近战的 Montage、Cost、检测会话和清理；`UAshenOathComboAttackAbility` 实现轻击连招输入与段落推进。
 - `UAshenOathDodgeAbility` 协调 Montage、Cost、位移 Task 和闪避窗口。
-- `UCombatActionData` 只保存动作配置，不保存运行时执行状态。
+- 游戏模块的 `UAshenOathActionData` 及其近战、闪避派生类型只保存动作配置，不保存运行时执行状态；Combat 模块通过参数接收所需配置。
 
 依赖方向保持单向：`AshenOath` 负责组装 `AshenOathCombat`；通用战斗模块不引用具体玩家、Boss 或 UI 类型。
 
@@ -35,7 +35,6 @@
 - [GAS 与属性系统](docs/systems/ability-system.md)
 - [玩家控制与镜头](docs/systems/player-control-camera.md)
 - [动画移动表现](docs/systems/locomotion-animation.md)
-- [ADR：GameplayAbility 拥有动作生命周期](docs/adr/0003-gameplay-ability-owns-combat-action-lifecycle.md)
 
 ## 环境与范围
 

@@ -3,13 +3,15 @@
 #include "AbilitySystem/AshenOathStaminaRegenerationEffect.h"
 #include "AbilitySystem/AshenOathStaminaRecoveryComponent.h"
 #include "AbilitySystem/Data/AshenOathHeavyAttackData.h"
+#include "AbilitySystem/Data/AshenOathComboAttackData.h"
 #include "AbilitySystemComponent.h"
 #include "GameplayEffect.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameplayTags/AshenOathGameplayTags.h"
-#include "Actions/CombatActionData.h"
+#include "AbilitySystem/Data/AshenOathActionData.h"
+#include "AbilitySystem/Data/AshenOathDodgeActionData.h"
 #include "Actions/CombatMeleeComponent.h"
 #include "Damage/CombatDamageComponent.h"
 #include "Defense/CombatDefenseComponent.h"
@@ -653,7 +655,7 @@ void AAshenOathPlayerCharacter::GrantConfiguredAbilities()
 
 void AAshenOathPlayerCharacter::GrantAbilityIfNeeded(
 	TSubclassOf<UGameplayAbility> AbilityClass,
-	UCombatActionData* ActionData,
+	UAshenOathActionData* ActionData,
 	FGameplayAbilitySpecHandle& InOutHandle)
 {
 	if (!AbilitySystemComponent || !AbilityClass || !ActionData)

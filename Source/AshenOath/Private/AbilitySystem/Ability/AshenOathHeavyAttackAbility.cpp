@@ -180,15 +180,13 @@ bool UAshenOathHeavyAttackAbility::IsHeavyDataReady(
 		HeavyData->NormalAttackDamageMagnitude <= KINDA_SMALL_NUMBER ||
 		HeavyData->FullyChargedDamageMultiplier < 1.0f ||
 		HeavyData->CostEffect ||
-		!HeavyData->ComboSections.IsEmpty() ||
 		!HeavyData->StartSection.IsNone() ||
 		HeavyData->ChargeStartSection.IsNone() ||
 		HeavyData->ChargeLoopSection.IsNone() ||
 		HeavyData->ChargedReleaseSection.IsNone() ||
 		HeavyData->ReleaseAutoAimMaxAngleDegrees < 0.0f ||
 		HeavyData->ReleaseAutoAimMaxAngleDegrees > 180.0f ||
-		HeavyData->ReleaseAutoAimMaxDistance <= KINDA_SMALL_NUMBER ||
-		HeavyData->MovementDistance > KINDA_SMALL_NUMBER)
+		HeavyData->ReleaseAutoAimMaxDistance <= KINDA_SMALL_NUMBER)
 	{
 		return false;
 	}

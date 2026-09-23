@@ -5,7 +5,7 @@
 #include "AshenOathComboAttackAbility.generated.h"
 
 class UAnimSequenceBase;
-class UCombatActionData;
+class UAshenOathComboAttackData;
 class USkeletalMeshComponent;
 
 /** Owns the player's light-combo input, section transitions, and execution. */
@@ -61,13 +61,13 @@ protected:
 	) override;
 
 private:
-	bool IsComboActionDataReady(const UCombatActionData* ActionData) const;
+	bool IsComboActionDataReady(const UAshenOathComboAttackData* ActionData) const;
 
 	bool StartComboExecution(
 		FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo,
 		FGameplayAbilityActivationInfo ActivationInfo,
-		const UCombatActionData* ActionData,
+		const UAshenOathComboAttackData* ActionData,
 		FName InitialSection
 	);
 

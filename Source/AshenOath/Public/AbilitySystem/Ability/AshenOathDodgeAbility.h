@@ -8,7 +8,7 @@
 class UAbilityTask_ApplyCombatMovement;
 class UAbilityTask_PlayMontageAndWait;
 class UAshenOathAbilityTask_RecoverFacing;
-class UCombatActionData;
+class UAshenOathDodgeActionData;
 class UCombatDefenseComponent;
 
 enum class EAshenOathDodgeFacingMode : uint8
@@ -66,7 +66,7 @@ protected:
 
 private:
 	bool IsActionDataReady(
-		const UCombatActionData* ActionData,
+		const UAshenOathDodgeActionData* ActionData,
 		const FGameplayAbilityActorInfo* ActorInfo,
 		const FVector& MovementDirection
 	) const;

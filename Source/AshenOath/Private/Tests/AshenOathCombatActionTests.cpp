@@ -8,7 +8,7 @@
 #include "AbilitySystem/AshenOathStaminaRecoveryComponent.h"
 #include "AbilitySystem/AshenOathStaminaRegenerationEffect.h"
 #include "AbilitySystemComponent.h"
-#include "Actions/CombatActionData.h"
+#include "AbilitySystem/Data/AshenOathDodgeActionData.h"
 #include "Damage/CombatDamageComponent.h"
 #include "Defense/CombatDefenseComponent.h"
 #include "Components/BoxComponent.h"
@@ -22,6 +22,7 @@
 #include "GameplayTags/AshenOathGameplayTags.h"
 #include "Misc/AutomationTest.h"
 #include "Targeting/CombatTargetingComponent.h"
+#include "UObject/UnrealType.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FAshenOathDodgeAbilityLifecycleTest,
@@ -118,7 +119,7 @@ bool FAshenOathDodgeAbilityLifecycleTest::RunTest(const FString& Parameters)
 		}
 		return false;
 	};
-	auto GetActiveDodgeData = [PlayerAbilitySystem]() -> const UCombatActionData*
+	auto GetActiveDodgeData = [PlayerAbilitySystem]() -> const UAshenOathDodgeActionData*
 	{
 		for (const FGameplayAbilitySpec& Spec : PlayerAbilitySystem->GetActivatableAbilities())
 		{
@@ -126,7 +127,7 @@ bool FAshenOathDodgeAbilityLifecycleTest::RunTest(const FString& Parameters)
 				Spec.Ability->GetAssetTags().HasTagExact(
 					AshenOathGameplayTags::Ability_Action_Dodge))
 			{
-				return Cast<UCombatActionData>(Spec.SourceObject.Get());
+				return Cast<UAshenOathDodgeActionData>(Spec.SourceObject.Get());
 			}
 		}
 		return nullptr;
@@ -189,7 +190,7 @@ bool FAshenOathDodgeAbilityLifecycleTest::RunTest(const FString& Parameters)
 		PlayerAbilitySystem->HasMatchingGameplayTag(AshenOathGameplayTags::State_Invulnerable)
 	);
 
-	const UCombatActionData* ForwardDodgeData = GetActiveDodgeData();
+	const UAshenOathDodgeActionData* ForwardDodgeData = GetActiveDodgeData();
 	TestNotNull(TEXT("Active forward dodge keeps its ActionData source"), ForwardDodgeData);
 	if (!ForwardDodgeData)
 	{
@@ -280,11 +281,25 @@ bool FAshenOathDodgeAbilityLifecycleTest::RunTest(const FString& Parameters)
 		TEXT("Side dodge test acquires its lock target"),
 		Targeting->TrySetTarget(Source)
 	);
+	const FFloatProperty* InwardAngleProperty = CastField<FFloatProperty>(
+		PlayerClass->FindPropertyByName(TEXT("LockedSideDodgeInwardAngle"))
+	);
+	TestNotNull(TEXT("Player exposes the configured locked side-dodge angle"),
+		InwardAngleProperty);
+	if (!InwardAngleProperty)
+	{
+		CleanupWorld();
+		return false;
+	}
+	const float InwardAngle = FMath::Clamp(
+		InwardAngleProperty->GetPropertyValue_InContainer(Player), 0.0f, 45.0f
+	);
+	const float SideAngleFromTarget = 90.0f - InwardAngle;
 	const FVector SideDodgeToTarget = FRotationMatrix(
 		SideDodgeReferenceRotation
 	).GetUnitAxis(EAxis::X);
 	const FVector ExpectedSideDodgeFacing = SideDodgeToTarget.RotateAngleAxis(
-		75.0f, FVector::UpVector
+		SideAngleFromTarget, FVector::UpVector
 	);
 	const FVector SideDodgeStart = Player->GetActorLocation();
 	// Camera lag and a previous action's facing must not change the lock-relative path.
@@ -295,7 +310,7 @@ bool FAshenOathDodgeAbilityLifecycleTest::RunTest(const FString& Parameters)
 		Player->RequestDodge(FVector2D(1.0f, 0.0f))
 	);
 	TestTrue(
-		TEXT("Locked right dodge faces 15 degrees inward from the target tangent"),
+		TEXT("Locked right dodge uses the configured inward angle"),
 		FVector::DotProduct(
 			Player->GetActorForwardVector(),
 			ExpectedSideDodgeFacing
@@ -307,7 +322,7 @@ bool FAshenOathDodgeAbilityLifecycleTest::RunTest(const FString& Parameters)
 			AshenOathGameplayTags::State_MovementLocked
 		)
 	);
-	const UCombatActionData* SideDodgeData = GetActiveDodgeData();
+	const UAshenOathDodgeActionData* SideDodgeData = GetActiveDodgeData();
 	TestNotNull(TEXT("Active side dodge keeps its ActionData source"), SideDodgeData);
 	if (!SideDodgeData)
 	{
@@ -381,14 +396,14 @@ bool FAshenOathDodgeAbilityLifecycleTest::RunTest(const FString& Parameters)
 	const FVector LeftDodgeStart = Player->GetActorLocation();
 	const FVector ExpectedLeftDodgeDirection = (
 		Source->GetActorLocation() - LeftDodgeStart
-	).GetSafeNormal2D().RotateAngleAxis(-75.0f, FVector::UpVector);
+	).GetSafeNormal2D().RotateAngleAxis(-SideAngleFromTarget, FVector::UpVector);
 	TestTrue(
 		TEXT("Locked left input activates a dodge"),
 		Player->RequestDodge(FVector2D(-1.0f, 0.0f))
 	);
 	TickWorldFor(SideDodgeData->MovementStartTime + SideDodgeData->MovementDuration);
 	TestTrue(
-		TEXT("Locked left dodge travels 15 degrees inward on the opposite side"),
+		TEXT("Locked left dodge uses the configured inward angle on the opposite side"),
 		FVector::DotProduct(
 			(Player->GetActorLocation() - LeftDodgeStart).GetSafeNormal2D(),
 			ExpectedLeftDodgeDirection
@@ -439,7 +454,7 @@ bool FAshenOathDodgeAbilityLifecycleTest::RunTest(const FString& Parameters)
 			ActorForward
 		) > 0.99f
 	);
-	const UCombatActionData* BackwardDodgeData = GetActiveDodgeData();
+	const UAshenOathDodgeActionData* BackwardDodgeData = GetActiveDodgeData();
 	TestNotNull(TEXT("Active backward dodge keeps its ActionData source"), BackwardDodgeData);
 	if (!BackwardDodgeData)
 	{
@@ -504,7 +519,7 @@ bool FAshenOathDodgeAbilityLifecycleTest::RunTest(const FString& Parameters)
 		TEXT("Dodge toward a wall still activates"),
 		Player->RequestDodge(FVector2D::ZeroVector)
 	);
-	const UCombatActionData* BlockedDodgeData = GetActiveDodgeData();
+	const UAshenOathDodgeActionData* BlockedDodgeData = GetActiveDodgeData();
 	TestNotNull(TEXT("Blocked dodge keeps its ActionData source"), BlockedDodgeData);
 	if (!BlockedDodgeData)
 	{
@@ -638,7 +653,7 @@ bool FAshenOathDodgeAbilityLifecycleTest::RunTest(const FString& Parameters)
 		TEXT("A later dodge receives a clean execution"),
 		Player->RequestDodge(FVector2D::ZeroVector)
 	);
-	const UCombatActionData* FinalDodgeData = GetActiveDodgeData();
+	const UAshenOathDodgeActionData* FinalDodgeData = GetActiveDodgeData();
 	TestNotNull(TEXT("Later dodge keeps its ActionData source"), FinalDodgeData);
 	if (!FinalDodgeData)
 	{

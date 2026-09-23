@@ -1,10 +1,10 @@
-﻿#include "Characters/AshenOathBossCharacter.h"
+#include "Characters/AshenOathBossCharacter.h"
 
 #include "AIController.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystem/Ability/AshenOathBossSingleSwingAbility.h"
 #include "AbilitySystem/AshenOathAttributeSet.h"
-#include "Actions/CombatActionData.h"
+#include "AbilitySystem/Data/AshenOathMeleeActionData.h"
 #include "Actions/CombatMeleeComponent.h"
 #include "Reaction/CombatHitReactionComponent.h"
 #include "Death/CombatDeathComponent.h"
@@ -202,7 +202,7 @@ void AAshenOathBossCharacter::CancelSingleSwing()
 }
 
 #if WITH_DEV_AUTOMATION_TESTS
-void AAshenOathBossCharacter::GrantSingleSwingForTesting(UCombatActionData* ActionData)
+void AAshenOathBossCharacter::GrantSingleSwingForTesting(UAshenOathMeleeActionData* ActionData)
 {
 	if (!IsValid(ActionData) || SingleSwingAbilitySpecHandle.IsValid())
 	{

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
@@ -11,13 +11,15 @@ class UAbilitySystemComponent;
 class UGameplayEffect;
 class UCameraComponent;
 class USpringArmComponent;
-class UCombatActionData;
+class UAshenOathActionData;
+class UAshenOathDodgeActionData;
 class UCombatDamageComponent;
 class UCombatDefenseComponent;
 class UCombatMeleeComponent;
 struct FGameplayTag;
 class UGameplayAbility;
 class UAshenOathComboAttackAbility;
+class UAshenOathComboAttackData;
 class UAshenOathHeavyAttackAbility;
 class UAshenOathHeavyAttackData;
 class UAshenOathDodgeAbility;
@@ -114,7 +116,7 @@ private:
 
 	// Immutable configuration supplied to the granted combo-attack AbilitySpec.
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat")
-	TObjectPtr<UCombatActionData> ComboAttackAction;
+	TObjectPtr<UAshenOathComboAttackData> ComboAttackAction;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Abilities")
 	TSubclassOf<UAshenOathComboAttackAbility> ComboAttackAbilityClass;
@@ -131,10 +133,10 @@ private:
 	FGameplayAbilitySpecHandle HeavyAttackAbilitySpecHandle;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Dodge")
-	TObjectPtr<UCombatActionData> ForwardDodgeAction;
+	TObjectPtr<UAshenOathDodgeActionData> ForwardDodgeAction;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Dodge")
-	TObjectPtr<UCombatActionData> BackwardDodgeAction;
+	TObjectPtr<UAshenOathDodgeActionData> BackwardDodgeAction;
 
 	// Biases locked lateral dodges toward the target; sampled only at activation.
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Dodge",
@@ -191,7 +193,7 @@ private:
 	void GrantConfiguredAbilities();
 	void GrantAbilityIfNeeded(
 		TSubclassOf<UGameplayAbility> AbilityClass,
-		UCombatActionData* ActionData,
+		UAshenOathActionData* ActionData,
 		FGameplayAbilitySpecHandle& InOutHandle
 	);
 

@@ -4,10 +4,10 @@
 #include "Abilities/GameplayAbility.h"
 #include "AshenOathCombatAbility.generated.h"
 
-class UCombatActionData;
+class UAshenOathActionData;
 
 /**
- * Thin shared contract for combat abilities backed by UCombatActionData.
+ * Thin shared contract for combat abilities backed by UAshenOathActionData.
  *
  * Concrete abilities still own their distinct execution flow. This base only
  * centralizes action mutual exclusion and the single-source GAS cost transaction.
@@ -33,7 +33,7 @@ protected:
 		FGameplayAbilityActivationInfo ActivationInfo
 	) const override;
 
-	const UCombatActionData* ResolveActionData(
+	const UAshenOathActionData* ResolveActionData(
 		FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo
 	) const;

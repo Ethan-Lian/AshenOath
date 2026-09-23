@@ -1,13 +1,14 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "AbilitySystem/Ability/AshenOathComboAttackAbility.h"
+#include "AbilitySystem/Data/AshenOathComboAttackData.h"
 #include "AbilitySystem/AshenOathAttributeSet.h"
+#include "Animation/AnimNotifyState_PlayerComboWindow.h"
 #include "Characters/AshenOathBossCharacter.h"
 #include "Characters/AshenOathPlayerCharacter.h"
 
 #include "Abilities/GameplayAbility.h"
 #include "AbilitySystemComponent.h"
-#include "Actions/CombatActionData.h"
 #include "Actions/CombatMeleeComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -19,6 +20,68 @@
 #include "GameplayAbilitySpec.h"
 #include "GameplayTags/AshenOathGameplayTags.h"
 #include "Misc/AutomationTest.h"
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAshenOathComboWindowConfigurationTest,
+	"AshenOath.Combat.Ability.ComboWindowConfiguration",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter
+)
+
+bool FAshenOathComboWindowConfigurationTest::RunTest(const FString& Parameters)
+{
+	const UAshenOathComboAttackData* ActionData = LoadObject<UAshenOathComboAttackData>(
+		nullptr,
+		TEXT("/Game/AshenOath/CombatData/Player/DA_Player_ComboAttack.DA_Player_ComboAttack")
+	);
+	TestNotNull(TEXT("Configured combo data loads"), ActionData);
+	if (!ActionData || !ActionData->Montage)
+	{
+		return false;
+	}
+
+	UAnimMontage* Montage = ActionData->Montage;
+	TestEqual(TEXT("Combo has four configured sections"), ActionData->ComboSections.Num(), 4);
+	if (ActionData->ComboSections.Num() != 4)
+	{
+		return false;
+	}
+
+	for (int32 SectionIndex = 0; SectionIndex < 3; ++SectionIndex)
+	{
+		const FName SectionName = ActionData->ComboSections[SectionIndex];
+		const int32 MontageSectionIndex = Montage->GetSectionIndex(SectionName);
+		TestTrue(TEXT("Combo section exists in montage"), MontageSectionIndex != INDEX_NONE);
+		if (MontageSectionIndex == INDEX_NONE)
+		{
+			continue;
+		}
+
+		float SectionStart = 0.0f;
+		float SectionEnd = 0.0f;
+		Montage->GetSectionStartAndEndTime(MontageSectionIndex, SectionStart, SectionEnd);
+		int32 WindowCount = 0;
+		for (const FAnimNotifyEvent& Event : Montage->Notifies)
+		{
+			if (IsValid(Event.NotifyStateClass) &&
+				Event.NotifyStateClass->IsA<UAnimNotifyState_PlayerComboWindow>() &&
+				Event.GetTriggerTime() >= SectionStart &&
+				Event.GetTriggerTime() < SectionEnd)
+			{
+				++WindowCount;
+				TestTrue(*FString::Printf(TEXT("%s ComboWindow ends before its section"),
+					*SectionName.ToString()),
+					Event.GetTriggerTime() + Event.GetDuration() < SectionEnd - 0.001f);
+				AddInfo(FString::Printf(TEXT("%s ComboWindow %.3f-%.3f Section %.3f-%.3f TickType %d"),
+					*SectionName.ToString(), Event.GetTriggerTime(),
+					Event.GetTriggerTime() + Event.GetDuration(), SectionStart, SectionEnd,
+					static_cast<int32>(Event.MontageTickType.GetValue())));
+			}
+		}
+		TestEqual(*FString::Printf(TEXT("%s has exactly one ComboWindow"), *SectionName.ToString()),
+			WindowCount, 1);
+	}
+	return true;
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FAshenOathComboAttackAbilityLifecycleTest,
@@ -110,8 +173,8 @@ bool FAshenOathComboAttackAbilityLifecycleTest::RunTest(const FString& Parameter
 
 	TestNotNull(TEXT("Possession grants the configured combo attack Ability"), ComboAttackSpec);
 
-	const UCombatActionData* ActionData = ComboAttackSpec
-		? Cast<UCombatActionData>(ComboAttackSpec->SourceObject.Get())
+	const UAshenOathComboAttackData* ActionData = ComboAttackSpec
+		? Cast<UAshenOathComboAttackData>(ComboAttackSpec->SourceObject.Get())
 		: nullptr;
 
 	TestNotNull(TEXT("The combo attack Spec keeps ActionData as its source"), ActionData);
@@ -312,8 +375,8 @@ bool FAshenOathComboAttackAbilityLifecycleTest::RunTest(const FString& Parameter
 		PlayerAbilitySystem->GetNumericAttribute(MaxStaminaAttribute)
 	);
 
-	UCombatActionData* FailedPlaybackData =
-		DuplicateObject<UCombatActionData>(ActionData, GetTransientPackage());
+	UAshenOathComboAttackData* FailedPlaybackData =
+		DuplicateObject<UAshenOathComboAttackData>(ActionData, GetTransientPackage());
 	FailedPlaybackData->Montage = NewObject<UAnimMontage>(FailedPlaybackData);
 
 	const FGameplayAbilitySpecHandle FailedPlaybackSpecHandle =

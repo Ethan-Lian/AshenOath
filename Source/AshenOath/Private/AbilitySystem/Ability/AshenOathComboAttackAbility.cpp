@@ -1,6 +1,6 @@
 #include "AbilitySystem/Ability/AshenOathComboAttackAbility.h"
+#include "AbilitySystem/Data/AshenOathComboAttackData.h"
 
-#include "Actions/CombatActionData.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -126,7 +126,8 @@ bool UAshenOathComboAttackAbility::CanActivateAbility(
 		return false;
 	}
 
-	return IsComboActionDataReady(ResolveActionData(Handle, ActorInfo));
+	return IsComboActionDataReady(
+		Cast<UAshenOathComboAttackData>(ResolveActionData(Handle, ActorInfo)));
 }
 
 void UAshenOathComboAttackAbility::ActivateAbility(
@@ -135,7 +136,8 @@ void UAshenOathComboAttackAbility::ActivateAbility(
 	const FGameplayAbilityActivationInfo ActivationInfo,
 	const FGameplayEventData* TriggerEventData)
 {
-	const UCombatActionData* ActionData = ResolveActionData(Handle, ActorInfo);
+	const UAshenOathComboAttackData* ActionData =
+		Cast<UAshenOathComboAttackData>(ResolveActionData(Handle, ActorInfo));
 	if (!IsComboActionDataReady(ActionData))
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
@@ -173,7 +175,7 @@ void UAshenOathComboAttackAbility::EndAbility(
 }
 
 bool UAshenOathComboAttackAbility::IsComboActionDataReady(
-	const UCombatActionData* ActionData) const
+	const UAshenOathComboAttackData* ActionData) const
 {
 	if (!ActionData || !ActionData->Montage)
 	{
@@ -202,7 +204,7 @@ bool UAshenOathComboAttackAbility::StartComboExecution(
 	const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
 	const FGameplayAbilityActivationInfo ActivationInfo,
-	const UCombatActionData* ActionData,
+	const UAshenOathComboAttackData* ActionData,
 	const FName InitialSection)
 {
 	ActiveComboSections = ActionData->ComboSections;

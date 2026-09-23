@@ -54,9 +54,10 @@ flowchart TD
 | Boss Character | ASC、AttributeSet、StateTreeComponent、单次挥击 AbilitySpec | 协调初始化和退出顺序；向 StateTree 提供请求、取消和对应 Ability 结束通知，不播放动画或执行选招评分 |
 | AttributeSet | Health、MaxHealth、Stamina、MaxStamina | 只维护数值范围；Death 组件观察 Health 并拥有终止转换 |
 | Combat GameplayAbility 基类 | 动作互斥、ActionData Cost 检查/应用与成功消耗通知 | 只共享 GAS 事务，不编排具体攻击或闪避 |
-| MeleeAttack GameplayAbility 基类 | 玩家近战共用的 Montage Task、Cost 提交、动画来源身份、Melee 会话和清理 | 不决定具体输入语义、连招规则或蓄力阶段；结束、中断、失败统一经 `EndAbility` 释放会话 |
+| MeleeAttack GameplayAbility 基类 | 玩家与 Boss 近战共用的 Montage Task、Cost 提交、动画来源身份、Melee 会话和清理 | 不决定具体输入语义、连招规则、蓄力阶段或 Boss 选招；结束、中断、失败统一经 `EndAbility` 释放会话 |
 | ComboAttack GameplayAbility | 轻击连招激活、Combo Window 输入消费及 Montage Section 推进 | 直接作为轻击 Ability 授予；只有所属动画窗口接受的重复输入才能推进下一段 |
 | HeavyAttack GameplayAbility | 按下、蓄力消耗、松开/满蓄释放及伤害倍率 | 与 Combo 并列复用 MeleeAttack 生命周期，不继承连招状态 |
+| BossSingleSwing GameplayAbility | 校验单次挥击配置并启动近战执行 | 复用 MeleeAttack 生命周期，不单独管理 Montage Task 或 Melee 会话 |
 | Dodge GameplayAbility | 一次闪避的方向/朝向策略快照、Montage、Cost、Travel/Recovery Task 与 Defense 窗口协调 | 前后配置由两个 AbilitySpec 的 SourceObject 区分；玩法状态只在费用成功后建立 |
 | CombatMovement AbilityTask | 一次代码位移的时间进度、MovementMode 与 RootMotionMode 接管 | Sweep 受阻自然截断；完成、取消和失败均恢复接管状态 |
 | DodgeFacingRecovery AbilityTask | 在闪避末段按实时目标方位把角色从位移朝向平滑带回锁定朝向 | 位于项目模块，只读取通用 Targeting 提供的目标 Actor；不进入 Combat 模块 |
@@ -68,6 +69,8 @@ flowchart TD
 | CombatDeath | 观察注入的 Health 属性，拥有一次性 Dead Tag、死亡事件和基础 Montage | 先建立终止状态，再广播给宿主清理并播放死亡表现；不引用具体角色或 GameMode |
 | HUD / Outcome Widget | 观察 GameMode 胜负并显示 Victory/Defeat 与 Retry | HUD 同步输入模式；Widget 只把按钮请求转发给 Controller |
 | AnimInstance | 本实例的移动表现数据；对 Character/Movement 的弱引用缓存 | 读取实际移动结果，不拥有 Gameplay 动作状态 |
+
+游戏模块的 `UAshenOathActionData` 保存 Montage、播放速率、可选起始 Section 与通用 Cost；`UAshenOathMeleeActionData` 增加伤害和扫掠配置，`UAshenOathDodgeActionData` 增加位移与防御窗口。玩家连招使用 `UAshenOathComboAttackData`，重击使用 `UAshenOathHeavyAttackData`。Combat 模块不读取这些 DataAsset；Ability 将配置转换为 Combat 组件和 Task 的调用参数。
 
 角色组件由构造函数创建。ASC 和 AttributeSet 随 Character 存续；动画缓存与输入注册记录使用弱引用，不延长所引用对象的生命周期。
 

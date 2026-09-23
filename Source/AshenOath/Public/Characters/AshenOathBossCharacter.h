@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
@@ -10,7 +10,7 @@ class UAshenOathAttributeSet;
 class UAbilitySystemComponent;
 class UGameplayEffect;
 class UStateTreeComponent;
-class UCombatActionData;
+class UAshenOathMeleeActionData;
 class UCombatDamageComponent;
 class UCombatMeleeComponent;
 class UAshenOathBossSingleSwingAbility;
@@ -50,7 +50,7 @@ public:
 
 #if WITH_DEV_AUTOMATION_TESTS
 	// Supplies transient test configuration without exposing mutable runtime setup.
-	void GrantSingleSwingForTesting(UCombatActionData* ActionData);
+	void GrantSingleSwingForTesting(UAshenOathMeleeActionData* ActionData);
 #endif
 
 protected:
@@ -92,7 +92,7 @@ private:
 	TObjectPtr<UCombatDeathComponent> DeathComponent;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Boss")
-	TObjectPtr<UCombatActionData> SingleSwingAction;
+	TObjectPtr<UAshenOathMeleeActionData> SingleSwingAction;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Boss")
 	TSubclassOf<UAshenOathBossSingleSwingAbility> SingleSwingAbilityClass;

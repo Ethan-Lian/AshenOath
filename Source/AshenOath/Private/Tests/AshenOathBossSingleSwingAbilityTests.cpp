@@ -3,7 +3,7 @@
 #include "Characters/AshenOathBossCharacter.h"
 
 #include "AbilitySystemComponent.h"
-#include "Actions/CombatActionData.h"
+#include "AbilitySystem/Data/AshenOathMeleeActionData.h"
 #include "Actions/CombatMeleeComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -53,7 +53,7 @@ bool FAshenOathBossSingleSwingAbilityLifecycleTest::RunTest(const FString& Param
 		return false;
 	}
 
-	UCombatActionData* TestActionData = NewObject<UCombatActionData>(Boss);
+	UAshenOathMeleeActionData* TestActionData = NewObject<UAshenOathMeleeActionData>(Boss);
 	TestActionData->Montage = LoadObject<UAnimMontage>(
 		nullptr,
 		TEXT("/Game/ParagonSevarog/Characters/Heroes/Sevarog/Animations/Swing1_Medium_Montage.Swing1_Medium_Montage")
@@ -104,8 +104,8 @@ bool FAshenOathBossSingleSwingAbilityLifecycleTest::RunTest(const FString& Param
 	}
 
 	TestNotNull(TEXT("Boss grants the configured single-swing Ability"), SingleSwingSpec);
-	const UCombatActionData* ActionData = SingleSwingSpec
-		? Cast<UCombatActionData>(SingleSwingSpec->SourceObject.Get())
+	const UAshenOathMeleeActionData* ActionData = SingleSwingSpec
+		? Cast<UAshenOathMeleeActionData>(SingleSwingSpec->SourceObject.Get())
 		: nullptr;
 	TestNotNull(TEXT("Single-swing Spec keeps ActionData as its source"), ActionData);
 
@@ -163,6 +163,14 @@ bool FAshenOathBossSingleSwingAbilityLifecycleTest::RunTest(const FString& Param
 		Melee->HasActiveSession());
 	TestFalse(TEXT("Cancellation closes the Boss hit window"),
 		Melee->HasActiveHitWindow());
+
+	TestActionData->StartSection = TEXT("MissingSection");
+	TestFalse(TEXT("An invalid Boss start section rejects activation"),
+		Boss->RequestSingleSwing());
+	TestEqual(TEXT("A rejected swing emits no completion"),
+		EndNotificationCount, 1);
+	TestFalse(TEXT("A rejected swing creates no melee session"),
+		Melee->HasActiveSession());
 
 	Boss->OnSingleSwingEnded().Remove(EndNotificationHandle);
 

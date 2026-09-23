@@ -3,7 +3,7 @@
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "AbilitySystem/Tasks/AshenOathAbilityTask_RecoverFacing.h"
 #include "AbilitySystemComponent.h"
-#include "Actions/CombatActionData.h"
+#include "AbilitySystem/Data/AshenOathDodgeActionData.h"
 #include "Animation/AnimMontage.h"
 #include "Defense/CombatDefenseComponent.h"
 #include "GameplayTags/AshenOathGameplayTags.h"
@@ -71,7 +71,7 @@ bool UAshenOathDodgeAbility::CanActivateAbility(
 	}
 
 	return IsActionDataReady(
-		ResolveActionData(Handle, ActorInfo),
+		Cast<UAshenOathDodgeActionData>(ResolveActionData(Handle, ActorInfo)),
 		ActorInfo,
 		PendingMovementDirection
 	);
@@ -83,7 +83,8 @@ void UAshenOathDodgeAbility::ActivateAbility(
 	const FGameplayAbilityActivationInfo ActivationInfo,
 	const FGameplayEventData* TriggerEventData)
 {
-	const UCombatActionData* ActionData = ResolveActionData(Handle, ActorInfo);
+	const UAshenOathDodgeActionData* ActionData =
+		Cast<UAshenOathDodgeActionData>(ResolveActionData(Handle, ActorInfo));
 	ActiveMovementDirection = PendingMovementDirection;
 	ActiveFacingMode = PendingFacingMode;
 	PendingMovementDirection = FVector::ZeroVector;
@@ -297,7 +298,7 @@ void UAshenOathDodgeAbility::EndAbility(
 }
 
 bool UAshenOathDodgeAbility::IsActionDataReady(
-	const UCombatActionData* ActionData,
+	const UAshenOathDodgeActionData* ActionData,
 	const FGameplayAbilityActorInfo* ActorInfo,
 	const FVector& MovementDirection) const
 {

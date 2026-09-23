@@ -9,7 +9,7 @@ class UAbilityTask_PlayMontageAndWait;
 class UAnimInstance;
 class UAnimMontage;
 class UAnimSequenceBase;
-class UCombatActionData;
+class UAshenOathMeleeActionData;
 class UCombatMeleeComponent;
 class USkeletalMeshComponent;
 
@@ -45,7 +45,7 @@ protected:
 	// No melee session or cost is committed until BeginMeleeExecution succeeds.
 	bool StartAttackMontage(
 		const FGameplayAbilityActorInfo* ActorInfo,
-		const UCombatActionData* ActionData,
+		const UAshenOathMeleeActionData* ActionData,
 		FName InitialSection
 	);
 
@@ -54,14 +54,14 @@ protected:
 		FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo,
 		FGameplayAbilityActivationInfo ActivationInfo,
-		const UCombatActionData* ActionData,
+		const UAshenOathMeleeActionData* ActionData,
 		bool bCommitConfiguredCost,
 		FGameplayTag SetByCallerMagnitudeTag = FGameplayTag(),
 		float SetByCallerMagnitude = 0.0f
 	);
 
 	bool IsMeleeActionDataReady(
-		const UCombatActionData* ActionData,
+		const UAshenOathMeleeActionData* ActionData,
 		const FGameplayAbilityActorInfo* ActorInfo
 	) const;
 

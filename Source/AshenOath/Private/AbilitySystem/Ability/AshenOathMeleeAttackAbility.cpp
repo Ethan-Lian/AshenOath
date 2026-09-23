@@ -2,7 +2,7 @@
 
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "AbilitySystemComponent.h"
-#include "Actions/CombatActionData.h"
+#include "AbilitySystem/Data/AshenOathMeleeActionData.h"
 #include "Actions/CombatMeleeComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -25,12 +25,14 @@ bool UAshenOathMeleeAttackAbility::CanActivateAbility(
 		return false;
 	}
 
-	return IsMeleeActionDataReady(ResolveActionData(Handle, ActorInfo), ActorInfo);
+	return IsMeleeActionDataReady(
+		Cast<UAshenOathMeleeActionData>(ResolveActionData(Handle, ActorInfo)),
+		ActorInfo);
 }
 
 bool UAshenOathMeleeAttackAbility::StartAttackMontage(
 	const FGameplayAbilityActorInfo* ActorInfo,
-	const UCombatActionData* ActionData,
+	const UAshenOathMeleeActionData* ActionData,
 	const FName InitialSection)
 {
 	if (!IsActive() || MontageTask ||
@@ -117,7 +119,7 @@ bool UAshenOathMeleeAttackAbility::BeginMeleeExecution(
 	const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
 	const FGameplayAbilityActivationInfo ActivationInfo,
-	const UCombatActionData* ActionData,
+	const UAshenOathMeleeActionData* ActionData,
 	const bool bCommitConfiguredCost,
 	const FGameplayTag SetByCallerMagnitudeTag,
 	const float SetByCallerMagnitude)
@@ -213,7 +215,7 @@ void UAshenOathMeleeAttackAbility::EndAbility(
 }
 
 bool UAshenOathMeleeAttackAbility::IsMeleeActionDataReady(
-	const UCombatActionData* ActionData,
+	const UAshenOathMeleeActionData* ActionData,
 	const FGameplayAbilityActorInfo* ActorInfo) const
 {
 	if (!ActionData || !ActionData->Montage ||
