@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "StateTreeTaskBase.h"
+#include "Characters/AshenOathBossCharacter.h"
 #include "AshenOathBossCombatTasks.generated.h"
 
 class AAIController;
@@ -29,7 +30,7 @@ struct ASHENOATH_API FAshenOathBossApproachTaskInstanceData
 	bool bOwnsMoveRequest = false;
 };
 
-/** Moves the Boss into single-swing range of the current local player. */
+/** Moves the Boss into its configured first-phase attack range. */
 USTRUCT(meta = (DisplayName = "Boss Approach Player", Category = "AshenOath|Boss"))
 struct ASHENOATH_API FAshenOathBossApproachTask : public FStateTreeTaskCommonBase
 {
@@ -63,14 +64,18 @@ struct ASHENOATH_API FAshenOathBossSingleSwingTaskInstanceData
 {
 	GENERATED_BODY()
 
+	UPROPERTY(EditAnywhere, Category = Parameter, meta = (ClampMin = "0.0", Units = "cm"))
+	float DashMinRange = 225.0f;
+
 	UPROPERTY(Transient)
 	TObjectPtr<AAshenOathBossCharacter> Boss;
 
-	FDelegateHandle AbilityEndedDelegateHandle;
+	FAshenOathBossAttackRequestHandle RequestHandle;
+	FDelegateHandle AttackEndedDelegateHandle;
 };
 
-/** Requests one Boss swing and completes only when that exact Ability ends. */
-USTRUCT(meta = (DisplayName = "Boss Single Swing", Category = "AshenOath|Boss"))
+/** Selects a first-phase attack and waits only for its own request to end. */
+USTRUCT(meta = (DisplayName = "Boss First-Phase Attack", Category = "AshenOath|Boss"))
 struct ASHENOATH_API FAshenOathBossSingleSwingTask : public FStateTreeTaskCommonBase
 {
 	GENERATED_BODY()

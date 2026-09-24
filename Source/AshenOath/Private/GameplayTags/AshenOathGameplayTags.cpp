@@ -33,6 +33,24 @@ namespace AshenOathGameplayTags
 	);
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Action_BossCombo,
+		"Ability.Action.BossCombo",
+		"Identifies the Boss combo combat ability."
+	);
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Action_BossChargedSwing,
+		"Ability.Action.BossChargedSwing",
+		"Identifies the Boss charged-swing combat ability."
+	);
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Action_BossDashSwing,
+		"Ability.Action.BossDashSwing",
+		"Identifies the Boss dash-swing combat ability."
+	);
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
 		Data_Cost_Stamina,
 		"Data.Cost.Stamina",
 		"SetByCaller magnitude for an action-authored Stamina change."

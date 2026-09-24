@@ -53,22 +53,22 @@ bool UAshenOathHeavyAttackAbility::CanActivateAbility(
 	const FGameplayTagContainer* TargetTags,
 	FGameplayTagContainer* OptionalRelevantTags) const
 {
-	if (!Super::CanActivateAbility(
-		Handle,
-		ActorInfo,
-		SourceTags,
-		TargetTags,
-		OptionalRelevantTags))
+	if (!IsHeavyDataReady(
+			Cast<UAshenOathHeavyAttackData>(ResolveActionData(Handle, ActorInfo))) ||
+		!ActorInfo || !ActorInfo->AbilitySystemComponent.IsValid() ||
+		ActorInfo->AbilitySystemComponent->GetNumericAttribute(
+			UAshenOathAttributeSet::GetStaminaAttribute()
+		) <= KINDA_SMALL_NUMBER)
 	{
 		return false;
 	}
 
-	return IsHeavyDataReady(
-		Cast<UAshenOathHeavyAttackData>(ResolveActionData(Handle, ActorInfo))
-	) && ActorInfo && ActorInfo->AbilitySystemComponent.IsValid() &&
-		ActorInfo->AbilitySystemComponent->GetNumericAttribute(
-			UAshenOathAttributeSet::GetStaminaAttribute()
-		) > KINDA_SMALL_NUMBER;
+	return Super::CanActivateAbility(
+		Handle,
+		ActorInfo,
+		SourceTags,
+		TargetTags,
+		OptionalRelevantTags);
 }
 
 void UAshenOathHeavyAttackAbility::ActivateAbility(

@@ -151,6 +151,8 @@ EStateTreeRunStatus FAshenOathBossSingleSwingTask::EnterState(
 	const FStateTreeTransitionResult& Transition) const
 {
 	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	InstanceData.RequestHandle = {};
+	InstanceData.AttackEndedDelegateHandle.Reset();
 	InstanceData.Boss = ResolveBoss(Context);
 
 	if (!IsValid(InstanceData.Boss))
@@ -158,24 +160,47 @@ EStateTreeRunStatus FAshenOathBossSingleSwingTask::EnterState(
 		return EStateTreeRunStatus::Failed;
 	}
 
-	InstanceData.AbilityEndedDelegateHandle = InstanceData.Boss->OnSingleSwingEnded().AddLambda(
-		[WeakContext = Context.MakeWeakExecutionContext()](const bool bWasCancelled)
-		{
-			WeakContext.FinishTask(
-				bWasCancelled
-					? EStateTreeFinishTaskType::Failed
-					: EStateTreeFinishTaskType::Succeeded
-			);
-		}
-	);
-
-	if (!InstanceData.Boss->RequestSingleSwing() || !InstanceData.Boss->IsSingleSwingActive())
+	AActor* TargetActor = UGameplayStatics::GetPlayerPawn(InstanceData.Boss, 0);
+	if (!IsValid(TargetActor))
 	{
-		InstanceData.Boss->OnSingleSwingEnded().Remove(InstanceData.AbilityEndedDelegateHandle);
-		InstanceData.AbilityEndedDelegateHandle.Reset();
 		InstanceData.Boss = nullptr;
 		return EStateTreeRunStatus::Failed;
 	}
+
+	FaceTarget(*InstanceData.Boss, *TargetActor);
+	const float Distance = FVector::Dist2D(
+		InstanceData.Boss->GetActorLocation(), TargetActor->GetActorLocation());
+	const FAshenOathBossAttackStartResult StartResult =
+		InstanceData.Boss->RequestFirstPhaseAttack(Distance, InstanceData.DashMinRange);
+
+	if (StartResult.State != EAshenOathBossAttackStartState::Running)
+	{
+		InstanceData.Boss = nullptr;
+		return StartResult.State == EAshenOathBossAttackStartState::Succeeded
+			? EStateTreeRunStatus::Succeeded
+			: EStateTreeRunStatus::Failed;
+	}
+
+	InstanceData.RequestHandle = StartResult.RequestHandle;
+	InstanceData.AttackEndedDelegateHandle =
+		InstanceData.Boss->OnBossAttackEnded().AddLambda(
+			[WeakContext = Context.MakeWeakExecutionContext(),
+			 ExpectedRequest = StartResult.RequestHandle](
+				FAshenOathBossAttackRequestHandle EndedRequest,
+				bool bWasCancelled)
+			{
+				if (!(EndedRequest == ExpectedRequest))
+				{
+					return;
+				}
+
+				WeakContext.FinishTask(
+					bWasCancelled
+						? EStateTreeFinishTaskType::Failed
+						: EStateTreeFinishTaskType::Succeeded
+				);
+			}
+		);
 
 	return EStateTreeRunStatus::Running;
 }
@@ -185,13 +210,24 @@ void FAshenOathBossSingleSwingTask::ExitState(
 	const FStateTreeTransitionResult& Transition) const
 {
 	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+
 	if (IsValid(InstanceData.Boss))
 	{
-		InstanceData.Boss->OnSingleSwingEnded().Remove(InstanceData.AbilityEndedDelegateHandle);
-		InstanceData.AbilityEndedDelegateHandle.Reset();
-		InstanceData.Boss->CancelSingleSwing();
+		if (InstanceData.AttackEndedDelegateHandle.IsValid())
+		{
+			InstanceData.Boss->OnBossAttackEnded().Remove(
+				InstanceData.AttackEndedDelegateHandle
+			);
+		}
+
+		if (InstanceData.RequestHandle.IsValid())
+		{
+			InstanceData.Boss->CancelBossAttack(InstanceData.RequestHandle);
+		}
 	}
 
+	InstanceData.AttackEndedDelegateHandle.Reset();
+	InstanceData.RequestHandle = {};
 	InstanceData.Boss = nullptr;
 }
 

@@ -60,7 +60,7 @@ bool FAshenOathBossSingleSwingAbilityLifecycleTest::RunTest(const FString& Param
 	);
 	TestActionData->DamageEffect = LoadClass<UGameplayEffect>(
 		nullptr,
-		TEXT("/Game/AshenOath/AbilitySystem/Effects/Player/GE_Player_Light01_Damage.GE_Player_Light01_Damage_C")
+		TEXT("/Game/AshenOath/AbilitySystem/Effects/Boss/GE_Boss_SingleSwing_Damage.GE_Boss_SingleSwing_Damage_C")
 	);
 	TestActionData->MeleeTraceRadius = 20.0f;
 
@@ -163,6 +163,48 @@ bool FAshenOathBossSingleSwingAbilityLifecycleTest::RunTest(const FString& Param
 		Melee->HasActiveSession());
 	TestFalse(TEXT("Cancellation closes the Boss hit window"),
 		Melee->HasActiveHitWindow());
+
+	int32 RequestEndCount = 0;
+	FAshenOathBossAttackRequestHandle EndedRequest;
+	bool bLastRequestWasCancelled = false;
+	const FDelegateHandle RequestEndHandle = Boss->OnBossAttackEnded().AddLambda(
+		[&RequestEndCount, &EndedRequest, &bLastRequestWasCancelled](
+			FAshenOathBossAttackRequestHandle Request, bool bWasCancelled)
+		{
+			++RequestEndCount;
+			EndedRequest = Request;
+			bLastRequestWasCancelled = bWasCancelled;
+		}
+	);
+
+	const FAshenOathBossAttackStartResult FirstRequest =
+		Boss->RequestFirstPhaseAttack(150.0f, 225.0f);
+	TestEqual(TEXT("The first-phase request runs the available swing"),
+		FirstRequest.State, EAshenOathBossAttackStartState::Running);
+	TestTrue(TEXT("A running request has an identity"),
+		FirstRequest.RequestHandle.IsValid());
+	TestFalse(TEXT("A different request cannot cancel the active swing"),
+		Boss->CancelBossAttack({FirstRequest.RequestHandle.Value + 1}));
+	TestTrue(TEXT("The unmatched cancellation leaves the swing active"),
+		SingleSwingSpec->IsActive());
+	TestTrue(TEXT("The owner can cancel its request"),
+		Boss->CancelBossAttack(FirstRequest.RequestHandle));
+	TestEqual(TEXT("The owned request ends exactly once"), RequestEndCount, 1);
+	TestTrue(TEXT("The end notification identifies the first request"),
+		EndedRequest == FirstRequest.RequestHandle);
+	TestTrue(TEXT("Explicit cancellation reports failure to the task"),
+		bLastRequestWasCancelled);
+
+	const FAshenOathBossAttackStartResult SecondRequest =
+		Boss->RequestBossAttack(EAshenOathBossAttackType::SingleSwing);
+	TestEqual(TEXT("The next swing receives a new running request"),
+		SecondRequest.State, EAshenOathBossAttackStartState::Running);
+	TestFalse(TEXT("An expired request cannot cancel the next swing"),
+		Boss->CancelBossAttack(FirstRequest.RequestHandle));
+	TestTrue(TEXT("The next swing remains active"), SingleSwingSpec->IsActive());
+	Boss->CancelBossAttack(SecondRequest.RequestHandle);
+	TestEqual(TEXT("Each owned request emits one completion"), RequestEndCount, 2);
+	Boss->OnBossAttackEnded().Remove(RequestEndHandle);
 
 	TestActionData->StartSection = TEXT("MissingSection");
 	TestFalse(TEXT("An invalid Boss start section rejects activation"),

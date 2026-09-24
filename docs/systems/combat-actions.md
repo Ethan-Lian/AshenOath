@@ -1,6 +1,6 @@
 # 战斗动作与伤害
 
-当前实现由 GameplayAbility 驱动玩家轻击连招、蓄力重击、前/后闪避和 Boss 单次挥击，并已接入普通/完美闪避判定、基础受击与死亡清理。游戏模块的 `UAshenOathActionData` 只保存配置，不保存执行状态；旧 `UCombatActionComponent` 及其执行句柄已经删除。
+当前实现由 GameplayAbility 驱动玩家轻击连招、蓄力重击、前/后闪避，以及 Boss 第一阶段的单次挥击、连击、蓄力重挥和突进后挥击，并已接入普通/完美闪避判定、基础受击与死亡清理。新增三招的资产配置和游戏内验证仍待完成。游戏模块的 `UAshenOathActionData` 只保存配置，不保存执行状态；旧 `UCombatActionComponent` 及其执行句柄已经删除。
 
 ## 职责边界
 
@@ -12,6 +12,9 @@
 | `UAshenOathHeavyAttackAbility` | 与 Combo 并列继承 MeleeAttack；拥有按下、蓄力消耗、释放、伤害倍率和自动瞄准 |
 | `UAshenOathDodgeAbility` | 拥有一次闪避的方向/朝向策略快照、Montage、Cost、Travel/Recovery Task、Defense 窗口和统一结束流程 |
 | `UAshenOathBossSingleSwingAbility` | 校验单次挥击起始 Section 并启动近战执行；复用 MeleeAttack 的 Montage、Cost、会话和清理流程，不决定接近、恢复或下一招 |
+| `UAshenOathBossComboAbility` | 按 ActionData 的 Section 顺序自动衔接两至三段挥击；整套只建立一次 Melee 会话和一次 Cost |
+| `UAshenOathBossChargedSwingAbility` | 前摇进入循环，按配置时间释放重挥；开始时提交 Cost，释放时才建立 Melee 会话 |
+| `UAshenOathBossDashSwingAbility` | 快照目标方向和停止距离，以代码 Sweep 完成突进后才切入挥击并建立 Melee 会话；突进段无伤害窗口 |
 | `UAbilityTask_ApplyCombatMovement` | 按动作时间执行 Sweep 位移，接管并恢复 MovementMode/RootMotionMode |
 | `UAshenOathAbilityTask_RecoverFacing` | 在闪避末段按目标 Actor 的实时位置平滑恢复锁定朝向；目标失效或 Ability 结束时随即清理 |
 | `UCombatDefenseComponent` | 保存普通/完美闪避窗口、来源句柄和单次消费状态，仅增加/移除自己持有的窗口 Tag |
@@ -44,7 +47,7 @@
 
 连招的每个 `PlayerComboWindow` 必须完整落在对应 Montage Section 内，并与相邻窗口留出间隔。窗口开始时 Ability 根据当前 Section 决定下一段；跨越 Section 边界或彼此重叠会使下一段的开窗被忽略。
 
-Boss 单次挥击复用同一启动事务，但由 StateTree 经 Boss Character 的窄入口请求。Task 在请求前订阅该 AbilitySpec 的结束事件；请求拒绝立即失败，正常 Montage 完成才成功，取消或中断失败。Task 退出先解除监听，再取消仍活动的挥击，因此停止 StateTree 不会遗留 Melee 会话，也不会让取消回调重入已经退出的 Task。
+Boss 近战复用同一执行基类，由 StateTree 经 Boss Character 的请求身份接口激活。请求若在 `TryActivateAbility` 内同步结束，直接返回成功或失败；仍在执行时，Task 再订阅携带请求句柄的结束事件。Task 退出先解除监听，再按句柄取消自己的攻击，因此旧请求不能取消下一招。第一阶段暂按距离选择突进，并轮换近距离三招；复杂 Utility 评分留待后续。
 
 ## Notify 与检测会话
 

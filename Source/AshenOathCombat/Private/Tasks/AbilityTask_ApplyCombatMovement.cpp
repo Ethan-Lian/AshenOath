@@ -145,6 +145,10 @@ void UAbilityTask_ApplyCombatMovement::TickTask(const float DeltaTime)
 	{
 		bMovementFinished = true;
 		EndMovementControl();
+		if (ShouldBroadcastAbilityTaskDelegates())
+		{
+			OnCompleted.Broadcast();
+		}
 	}
 }
 

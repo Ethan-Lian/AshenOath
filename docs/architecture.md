@@ -41,8 +41,8 @@ flowchart TD
     P -->|初始化 / 读取状态 Tag| GAS
     B[Boss Character] -->|初始化| BGAS[Boss ASC / AttributeSet]
     B -->|显式 StartLogic / StopLogic| ST[StateTree Component]
-    ST -->|接近 / 请求单次挥击 / 恢复| B
-    BGAS --> BATTACK[Boss SingleSwing GameplayAbility]
+    ST -->|接近 / 请求第一阶段攻击 / 恢复| B
+    BGAS --> BATTACK[Boss 近战 GameplayAbilities]
     BATTACK -->|Montage 与会话| MELEE
 ```
 
@@ -51,13 +51,14 @@ flowchart TD
 | GameMode | 默认 Pawn/Controller 类、当前 Boss 和一次性胜负结果 | 首个有效死亡报告决定胜负；只在结算后接受重试并重新加载当前关卡 |
 | PlayerController | InputComponent 绑定、Mapping Context 注册、最近移动意图和重试转发 | 每次输入取当前 Pawn；结算时关闭 Gameplay 输入并切换到 UI，不自行决定胜负 |
 | Player Character | ASC、AttributeSet、镜头和 Combat 组件；使用继承的 CharacterMovement | 验证角色状态、选择玩家动作数据，将相对视角意图转为世界方向；不直接写战斗数值 |
-| Boss Character | ASC、AttributeSet、StateTreeComponent、单次挥击 AbilitySpec | 协调初始化和退出顺序；向 StateTree 提供请求、取消和对应 Ability 结束通知，不播放动画或执行选招评分 |
+| Boss Character | ASC、AttributeSet、StateTreeComponent、四类近战 AbilitySpec 与请求身份 | 协调初始化和退出顺序；保存跨 StateTree 重入的第一阶段轮换历史，按距离尝试突进与近战，不播放动画或执行复杂评分 |
 | AttributeSet | Health、MaxHealth、Stamina、MaxStamina | 只维护数值范围；Death 组件观察 Health 并拥有终止转换 |
 | Combat GameplayAbility 基类 | 动作互斥、ActionData Cost 检查/应用与成功消耗通知 | 只共享 GAS 事务，不编排具体攻击或闪避 |
 | MeleeAttack GameplayAbility 基类 | 玩家与 Boss 近战共用的 Montage Task、Cost 提交、动画来源身份、Melee 会话和清理 | 不决定具体输入语义、连招规则、蓄力阶段或 Boss 选招；结束、中断、失败统一经 `EndAbility` 释放会话 |
 | ComboAttack GameplayAbility | 轻击连招激活、Combo Window 输入消费及 Montage Section 推进 | 直接作为轻击 Ability 授予；只有所属动画窗口接受的重复输入才能推进下一段 |
 | HeavyAttack GameplayAbility | 按下、蓄力消耗、松开/满蓄释放及伤害倍率 | 与 Combo 并列复用 MeleeAttack 生命周期，不继承连招状态 |
 | BossSingleSwing GameplayAbility | 校验单次挥击配置并启动近战执行 | 复用 MeleeAttack 生命周期，不单独管理 Montage Task 或 Melee 会话 |
+| BossCombo / ChargedSwing / DashSwing GameplayAbility | 分别编排连续挥击、定时蓄力释放、代码突进后挥击 | 共用 MeleeAttack 生命周期；突进位移结束后才建立伤害会话，全部取消路径由 GAS 清理 |
 | Dodge GameplayAbility | 一次闪避的方向/朝向策略快照、Montage、Cost、Travel/Recovery Task 与 Defense 窗口协调 | 前后配置由两个 AbilitySpec 的 SourceObject 区分；玩法状态只在费用成功后建立 |
 | CombatMovement AbilityTask | 一次代码位移的时间进度、MovementMode 与 RootMotionMode 接管 | Sweep 受阻自然截断；完成、取消和失败均恢复接管状态 |
 | DodgeFacingRecovery AbilityTask | 在闪避末段按实时目标方位把角色从位移朝向平滑带回锁定朝向 | 位于项目模块，只读取通用 Targeting 提供的目标 Actor；不进入 Combat 模块 |
@@ -86,7 +87,7 @@ flowchart TD
 
 **结算到重试**：玩家或 Boss 的首个死亡报告提交唯一 Defeat/Victory → HUD 显示结算并关闭 Gameplay 输入 → Retry 按钮经 PlayerController 请求 GameMode → GameMode 重新加载当前关卡。
 
-**Boss 最小循环**：StateTree 的 Approach Task 通过 AIController 接近本地玩家 → SingleSwing Task 先监听对应 AbilitySpec 的结束，再调用 Boss 请求入口 → Boss SingleSwing Ability 播放项目 Montage、建立 Melee 会话并等待动画完成 → Task 按正常完成或取消得到成功/失败 → Recovery Task 保留无伤害间隔后重新接近。树退出时 Task 先解除监听并只取消自己等待的单次挥击。
+**Boss 第一阶段循环**：StateTree 的 Approach Task 接近本地玩家 → 攻击 Task 计算距离并请求 Boss；Boss 在近距离轮换单次挥击、连击、蓄力重挥，较远时尝试突进且不连续选择突进 → GameplayAbility 编排 Montage、位移及 Melee 会话 → Task 按本次请求句柄等待结果 → Recovery Task 保留无伤害间隔。树退出时 Task 先解除监听，再按句柄取消自己持有的攻击。后续 Utility 评分与阶段状态仍未接入。
 
 **初始化到退出**：玩家随占有刷新 GAS 上下文；Boss 在进入游戏时初始化 GAS，再调用 StateTree 启动。Boss 退出先停树，再清理 GAS 上下文，使树的退出逻辑仍可使用 GAS。
 
