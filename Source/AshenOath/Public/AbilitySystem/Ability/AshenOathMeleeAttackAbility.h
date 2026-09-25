@@ -25,6 +25,12 @@ class ASHENOATH_API UAshenOathMeleeAttackAbility : public UAshenOathCombatAbilit
 	GENERATED_BODY()
 
 protected:
+	enum class EMeleeCostCommit : uint8
+	{
+		CommitConfigured,
+		SkipConfigured
+	};
+
 	virtual bool CanActivateAbility(
 		FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo,
@@ -55,7 +61,7 @@ protected:
 		const FGameplayAbilityActorInfo* ActorInfo,
 		FGameplayAbilityActivationInfo ActivationInfo,
 		const UAshenOathMeleeActionData* ActionData,
-		bool bCommitConfiguredCost,
+		EMeleeCostCommit CostCommit,
 		FGameplayTag SetByCallerMagnitudeTag = FGameplayTag(),
 		float SetByCallerMagnitude = 0.0f
 	);

@@ -54,6 +54,11 @@ protected:
 
 private:
 	bool IsHeavyDataReady(const UAshenOathHeavyAttackData* HeavyData) const;
+	bool StartCharging(
+		const FGameplayAbilityActorInfo* ActorInfo,
+		const UAshenOathHeavyAttackData* HeavyData,
+		UWorld* World
+	);
 	bool StartChargedRelease();
 	bool ConsumeChargeThroughCurrentTime();
 	float CalculateChargedDamageMagnitude() const;

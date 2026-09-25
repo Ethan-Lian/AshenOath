@@ -21,6 +21,15 @@
 #include "GameplayTags/AshenOathGameplayTags.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
+namespace
+{
+	constexpr EAshenOathBossAttackType NearAttacks[] = {
+		EAshenOathBossAttackType::SingleSwing,
+		EAshenOathBossAttackType::Combo,
+		EAshenOathBossAttackType::ChargedSwing
+	};
+}
+
 AAshenOathBossCharacter::AAshenOathBossCharacter()
 {
 	AIControllerClass = AAIController::StaticClass();
@@ -66,6 +75,7 @@ void AAshenOathBossCharacter::BeginPlay()
 	check(AbilitySystemComponent);
 	check(AttributeSet);
 	check(StateTreeComponent);
+	CombatDecisionRandomStream.Initialize(CombatDecisionSeed);
 
 	AbilitySystemComponent->InitAbilityActorInfo(this, this);
 	AbilityEndedDelegateHandle = AbilitySystemComponent->OnAbilityEnded.AddUObject(
@@ -121,6 +131,7 @@ void AAshenOathBossCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		StateTreeComponent->StopLogic(TEXT("Boss EndPlay"));
 	}
+	PendingCombatDecision = {};
 
 	CancelCombatAbilities();
 
@@ -312,6 +323,7 @@ void AAshenOathBossCharacter::HandleDeathStarted()
 	{
 		StateTreeComponent->StopLogic(TEXT("Boss died"));
 	}
+	PendingCombatDecision = {};
 
 	CancelCombatAbilities();
 
@@ -348,6 +360,22 @@ void AAshenOathBossCharacter::HandleDeathStarted()
 
 FAshenOathBossAttackStartResult AAshenOathBossCharacter::RequestBossAttack(EAshenOathBossAttackType AttackType)
 {
+	FGameplayAbilitySpecHandle SpecHandle;
+	if (!CanStartBossAttack(AttackType, SpecHandle))
+	{
+		return {};
+	}
+
+	const FAshenOathBossAttackRequestHandle Request =
+		ReserveBossAttackRequest(SpecHandle);
+	const bool bAccepted = AbilitySystemComponent->TryActivateAbility(SpecHandle);
+	return ResolveBossAttackStart(Request, SpecHandle, bAccepted);
+}
+
+bool AAshenOathBossCharacter::CanStartBossAttack(
+	const EAshenOathBossAttackType AttackType,
+	FGameplayAbilitySpecHandle& OutSpecHandle) const
+{
 	if (!AbilitySystemComponent ||
 			IsActorBeingDestroyed() ||
 			bStartingBossAttack ||
@@ -357,20 +385,21 @@ FAshenOathBossAttackStartResult AAshenOathBossCharacter::RequestBossAttack(EAshe
 			AbilitySystemComponent->HasMatchingGameplayTag(
 				AshenOathGameplayTags::State_Staggered))
 	{
-		return {};
+		return false;
 	}
 
-	const FGameplayAbilitySpecHandle SpecHandle =  ResolveBossAttackSpec(AttackType);
+	OutSpecHandle = ResolveBossAttackSpec(AttackType);
 
-	const FGameplayAbilitySpec* Spec = SpecHandle.IsValid()
-		? AbilitySystemComponent->FindAbilitySpecFromHandle(SpecHandle)
+	const FGameplayAbilitySpec* Spec = OutSpecHandle.IsValid()
+		? AbilitySystemComponent->FindAbilitySpecFromHandle(OutSpecHandle)
 		: nullptr;
 
-	if (!Spec || Spec->IsActive())
-	{
-		return {};
-	}
+	return Spec && !Spec->IsActive();
+}
 
+FAshenOathBossAttackRequestHandle AAshenOathBossCharacter::ReserveBossAttackRequest(
+	const FGameplayAbilitySpecHandle SpecHandle)
+{
 	// Zero is reserved for an invalid request handle.
 	if (NextBossAttackRequestValue == 0)
 	{
@@ -390,8 +419,14 @@ FAshenOathBossAttackStartResult AAshenOathBossCharacter::RequestBossAttack(EAshe
 	bSynchronousBossAttackWasCancelled = false;
 	bCancelBossAttackAfterStart = false;
 
-	const bool bAccepted = AbilitySystemComponent->TryActivateAbility(SpecHandle);
+	return Request;
+}
 
+FAshenOathBossAttackStartResult AAshenOathBossCharacter::ResolveBossAttackStart(
+	const FAshenOathBossAttackRequestHandle Request,
+	const FGameplayAbilitySpecHandle SpecHandle,
+	const bool bAccepted)
+{
 	if (bCancelBossAttackAfterStart &&
 		ActiveBossAttackRequest == Request)
 	{
@@ -448,7 +483,7 @@ FAshenOathBossAttackStartResult AAshenOathBossCharacter::RequestFirstPhaseAttack
 	const float TargetDistance,
 	const float DashMinRange)
 {
-	if (TargetDistance >= DashMinRange && !bLastAttackWasDash)
+	if (TargetDistance > DashMinRange && !bLastAttackWasDash)
 	{
 		const FAshenOathBossAttackStartResult DashResult =
 			RequestBossAttack(EAshenOathBossAttackType::DashSwing);
@@ -459,11 +494,6 @@ FAshenOathBossAttackStartResult AAshenOathBossCharacter::RequestFirstPhaseAttack
 		}
 	}
 
-	constexpr EAshenOathBossAttackType NearAttacks[] = {
-		EAshenOathBossAttackType::SingleSwing,
-		EAshenOathBossAttackType::Combo,
-		EAshenOathBossAttackType::ChargedSwing
-	};
 	constexpr int32 NumNearAttacks = UE_ARRAY_COUNT(NearAttacks);
 	for (int32 Offset = 0; Offset < NumNearAttacks; ++Offset)
 	{
@@ -478,6 +508,157 @@ FAshenOathBossAttackStartResult AAshenOathBossCharacter::RequestFirstPhaseAttack
 		}
 	}
 
+	return {};
+}
+
+bool AAshenOathBossCharacter::ChooseFirstPhaseCombatIntent(
+	const float TargetDistance,
+	const float MeleeRange,
+	const float DashMinStartRange,
+	const float DashProbability)
+{
+	PendingCombatDecision = {};
+	if (!FMath::IsFinite(TargetDistance) || MeleeRange < 0.0f ||
+		DashMinStartRange < MeleeRange || !FMath::IsFinite(DashProbability))
+	{
+		return false;
+	}
+
+	const float Distance = FMath::Max(0.0f, TargetDistance);
+	PendingCombatDecision.MeleeRange = MeleeRange;
+	if (Distance > MeleeRange)
+	{
+		const bool bDashCanReach = DashSwingAbilitySpecHandle.IsValid() &&
+			IsValid(DashSwingAction) &&
+			Distance > DashSwingAction->StopDistance + KINDA_SMALL_NUMBER;
+		if (Distance > DashMinStartRange && bDashCanReach && !bLastAttackWasDash &&
+			CombatDecisionRandomStream.GetFraction() < FMath::Clamp(DashProbability, 0.0f, 1.0f))
+		{
+			PendingCombatDecision.Intent = EAshenOathBossCombatIntent::Attack;
+			PendingCombatDecision.AttackType = EAshenOathBossAttackType::DashSwing;
+			return true;
+		}
+
+		PendingCombatDecision.Intent = EAshenOathBossCombatIntent::Approach;
+		PendingCombatDecision.ApproachRange = MeleeRange;
+		return true;
+	}
+
+	for (int32 Offset = 0; Offset < UE_ARRAY_COUNT(NearAttacks); ++Offset)
+	{
+		const int32 Index = (NextNearAttackIndex + Offset) % UE_ARRAY_COUNT(NearAttacks);
+		if (ResolveBossAttackSpec(NearAttacks[Index]).IsValid())
+		{
+			PendingCombatDecision.Intent = EAshenOathBossCombatIntent::Attack;
+			PendingCombatDecision.AttackType = NearAttacks[Index];
+			return true;
+		}
+	}
+
+	PendingCombatDecision.Intent = EAshenOathBossCombatIntent::Wait;
+	return true;
+}
+
+EAshenOathBossCombatIntent AAshenOathBossCharacter::GetPendingCombatIntent() const
+{
+	return PendingCombatDecision.Intent;
+}
+
+void AAshenOathBossCharacter::ClearPendingCombatDecision()
+{
+	PendingCombatDecision = {};
+}
+
+bool AAshenOathBossCharacter::TryConsumeApproachDecision(float& OutRange)
+{
+	if (PendingCombatDecision.Intent != EAshenOathBossCombatIntent::Approach)
+	{
+		return false;
+	}
+
+	OutRange = PendingCombatDecision.ApproachRange;
+	PendingCombatDecision = {};
+	return true;
+}
+
+FAshenOathBossAttackStartResult AAshenOathBossCharacter::RequestSelectedCombatAttack()
+{
+	if (PendingCombatDecision.Intent != EAshenOathBossCombatIntent::Attack)
+	{
+		return {};
+	}
+
+	const FAshenOathBossCombatDecision Decision = PendingCombatDecision;
+	PendingCombatDecision = {};
+	return Decision.AttackType == EAshenOathBossAttackType::DashSwing
+		? RequestSelectedDashAttack(Decision)
+		: RequestSelectedNearAttack(Decision);
+}
+
+FAshenOathBossAttackStartResult AAshenOathBossCharacter::RequestSelectedDashAttack(
+	const FAshenOathBossCombatDecision& Decision)
+{
+	const FAshenOathBossAttackStartResult Result =
+		RequestBossAttack(EAshenOathBossAttackType::DashSwing);
+	if (Result.State == EAshenOathBossAttackStartState::Rejected)
+	{
+		PendingCombatDecision.Intent = EAshenOathBossCombatIntent::Approach;
+		PendingCombatDecision.ApproachRange = Decision.MeleeRange;
+	}
+	else if (Result.State == EAshenOathBossAttackStartState::Running ||
+		Result.State == EAshenOathBossAttackStartState::Succeeded)
+	{
+		bLastAttackWasDash = true;
+	}
+	else
+	{
+		PendingCombatDecision.Intent = EAshenOathBossCombatIntent::Wait;
+	}
+	return Result;
+}
+
+FAshenOathBossAttackStartResult AAshenOathBossCharacter::RequestSelectedNearAttack(
+	const FAshenOathBossCombatDecision& Decision)
+{
+	int32 FirstIndex = INDEX_NONE;
+	for (int32 Index = 0; Index < UE_ARRAY_COUNT(NearAttacks); ++Index)
+	{
+		if (NearAttacks[Index] == Decision.AttackType)
+		{
+			FirstIndex = Index;
+			break;
+		}
+	}
+
+	if (FirstIndex == INDEX_NONE)
+	{
+		PendingCombatDecision.Intent = EAshenOathBossCombatIntent::Wait;
+		return {};
+	}
+
+	for (int32 Offset = 0; Offset < UE_ARRAY_COUNT(NearAttacks); ++Offset)
+	{
+		const int32 Index = (FirstIndex + Offset) % UE_ARRAY_COUNT(NearAttacks);
+		const FAshenOathBossAttackStartResult Result = RequestBossAttack(NearAttacks[Index]);
+		if (Result.State == EAshenOathBossAttackStartState::Rejected)
+		{
+			continue;
+		}
+
+		if (Result.State == EAshenOathBossAttackStartState::Running ||
+			Result.State == EAshenOathBossAttackStartState::Succeeded)
+		{
+			NextNearAttackIndex = (Index + 1) % UE_ARRAY_COUNT(NearAttacks);
+			bLastAttackWasDash = false;
+		}
+		else
+		{
+			PendingCombatDecision.Intent = EAshenOathBossCombatIntent::Wait;
+		}
+		return Result;
+	}
+
+	PendingCombatDecision.Intent = EAshenOathBossCombatIntent::Wait;
 	return {};
 }
 

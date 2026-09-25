@@ -189,6 +189,7 @@ private:
 	void HandleLockTargetChanged(AActor* PreviousTarget, AActor* NewTarget);
 	void UpdateLockedView(float DeltaSeconds);
 	void RefreshFacingMode();
+	FVector CalculateDodgeDirection(const FVector2D& DodgeIntent) const;
 
 	void GrantConfiguredAbilities();
 	void GrantAbilityIfNeeded(

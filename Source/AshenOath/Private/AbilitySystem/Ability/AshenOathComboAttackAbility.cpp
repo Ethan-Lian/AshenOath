@@ -233,7 +233,7 @@ bool UAshenOathComboAttackAbility::StartComboExecution(
 		ActorInfo,
 		ActivationInfo,
 		ActionData,
-		true
+		EMeleeCostCommit::CommitConfigured
 	);
 }
 

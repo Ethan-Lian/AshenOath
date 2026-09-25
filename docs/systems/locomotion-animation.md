@@ -2,7 +2,7 @@
 
 `UAshenOathCharacterAnimInstance` 将角色的实际移动结果转换为四项表现数据。C++ 定义语义和失效处理，AnimBP/Blend Space 负责具体资源与混合。
 
-系统关系见 [架构总览](../architecture.md)。
+系统关系见 [架构总览](../arch/architecture.md)。
 
 ## 数据接口
 

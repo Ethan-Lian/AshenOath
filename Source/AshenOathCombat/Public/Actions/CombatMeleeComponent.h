@@ -45,18 +45,7 @@ public:
 
 	// Starts only for the exact active Montage instance. The optional SetByCaller
 	// value is forwarded to accepted hits; failure returns an invalid handle.
-	FCombatMeleeSessionHandle BeginSession(
-		TSubclassOf<UGameplayEffect> DamageEffect,
-		bool bCanTriggerPerfectDodge,
-		float TraceRadius,
-		const TArray<FName>& TraceBones,
-		USkeletalMeshComponent* SourceMesh,
-		UAnimInstance* SourceAnimInstance,
-		UAnimMontage* SourceMontage,
-		int32 MontageInstanceId,
-		FGameplayTag SetByCallerMagnitudeTag = FGameplayTag(),
-		float SetByCallerMagnitude = 0.0f
-	);
+	FCombatMeleeSessionHandle BeginSession(const FCombatMeleeSessionRequest& Request);
 
 	// Ends the session only when SessionHandle still identifies the active one.
 	void EndSession(const FCombatMeleeSessionHandle& SessionHandle);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "StateTreeConditionBase.h"
 #include "StateTreeTaskBase.h"
 #include "Characters/AshenOathBossCharacter.h"
 #include "AshenOathBossCombatTasks.generated.h"
@@ -8,6 +9,65 @@
 class AAIController;
 class AActor;
 class AAshenOathBossCharacter;
+
+USTRUCT()
+struct ASHENOATH_API FAshenOathBossDecideTaskInstanceData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, Category = Parameter, meta = (ClampMin = "0.0", Units = "cm"))
+	float MeleeRange = 300.0f;
+
+	UPROPERTY(EditAnywhere, Category = Parameter, meta = (ClampMin = "0.0", Units = "cm"))
+	float DashMinStartRange = 500.0f;
+
+	UPROPERTY(EditAnywhere, Category = Parameter, meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float DashProbability = 0.35f;
+};
+
+/** Chooses one approach, attack, or wait intent before the shared combat loop branches. */
+USTRUCT(meta = (DisplayName = "Boss Decide Combat Intent", Category = "AshenOath|Boss"))
+struct ASHENOATH_API FAshenOathBossDecideTask : public FStateTreeTaskCommonBase
+{
+	GENERATED_BODY()
+
+	using FInstanceDataType = FAshenOathBossDecideTaskInstanceData;
+
+	virtual const UStruct* GetInstanceDataType() const override
+	{
+		return FInstanceDataType::StaticStruct();
+	}
+
+	virtual EStateTreeRunStatus EnterState(
+		FStateTreeExecutionContext& Context,
+		const FStateTreeTransitionResult& Transition
+	) const override;
+};
+
+USTRUCT()
+struct ASHENOATH_API FAshenOathBossIntentConditionInstanceData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, Category = Parameter)
+	EAshenOathBossCombatIntent ExpectedIntent = EAshenOathBossCombatIntent::Attack;
+};
+
+/** Tests the decision retained by the Boss across a StateTree transition. */
+USTRUCT(meta = (DisplayName = "Boss Combat Intent Is", Category = "AshenOath|Boss"))
+struct ASHENOATH_API FAshenOathBossIntentCondition : public FStateTreeConditionCommonBase
+{
+	GENERATED_BODY()
+
+	using FInstanceDataType = FAshenOathBossIntentConditionInstanceData;
+
+	virtual const UStruct* GetInstanceDataType() const override
+	{
+		return FInstanceDataType::StaticStruct();
+	}
+
+	virtual bool TestCondition(FStateTreeExecutionContext& Context) const override;
+};
 
 USTRUCT()
 struct ASHENOATH_API FAshenOathBossApproachTaskInstanceData
@@ -28,6 +88,9 @@ struct ASHENOATH_API FAshenOathBossApproachTaskInstanceData
 
 	UPROPERTY(Transient)
 	bool bOwnsMoveRequest = false;
+
+	UPROPERTY(Transient)
+	float EffectiveRange = 0.0f;
 };
 
 /** Moves the Boss into its configured first-phase attack range. */
@@ -65,7 +128,7 @@ struct ASHENOATH_API FAshenOathBossSingleSwingTaskInstanceData
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, Category = Parameter, meta = (ClampMin = "0.0", Units = "cm"))
-	float DashMinRange = 225.0f;
+	float DashMinRange = 500.0f;
 
 	UPROPERTY(Transient)
 	TObjectPtr<AAshenOathBossCharacter> Boss;

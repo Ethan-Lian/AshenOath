@@ -4,7 +4,7 @@
 #include "AbilitySystem/Ability/AshenOathMeleeAttackAbility.h"
 #include "AshenOathBossDashSwingAbility.generated.h"
 
-class UAbilityTask_ApplyCombatMovement;
+class UAbilityTask_BossDashChase;
 class UAshenOathBossDashSwingActionData;
 
 /** One Boss attack execution owns the dash and its following swing. */
@@ -52,5 +52,5 @@ private:
 	TWeakObjectPtr<const UAshenOathBossDashSwingActionData> ActiveActionData;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UAbilityTask_ApplyCombatMovement> MovementTask;
+	TObjectPtr<UAbilityTask_BossDashChase> MovementTask;
 };

@@ -34,6 +34,15 @@ enum class EAshenOathBossAttackType : uint8
 	DashSwing
 };
 
+UENUM(BlueprintType)
+enum class EAshenOathBossCombatIntent : uint8
+{
+	None,
+	Approach,
+	Attack,
+	Wait
+};
+
 enum class EAshenOathBossAttackStartState : uint8
 {
 	Rejected,
@@ -61,6 +70,14 @@ struct FAshenOathBossAttackStartResult
 {
 	EAshenOathBossAttackStartState State = EAshenOathBossAttackStartState::Rejected;
 	FAshenOathBossAttackRequestHandle RequestHandle;
+};
+
+struct FAshenOathBossCombatDecision
+{
+	EAshenOathBossCombatIntent Intent = EAshenOathBossCombatIntent::None;
+	EAshenOathBossAttackType AttackType = EAshenOathBossAttackType::SingleSwing;
+	float ApproachRange = 0.0f;
+	float MeleeRange = 0.0f;
 };
 
 
@@ -116,6 +133,24 @@ public:
 		float DashMinRange
 	);
 
+	// Selects one first-phase intent using center-to-center 2D distances in cm.
+	// The decision persists across StateTree transitions until its consumer takes it.
+	bool ChooseFirstPhaseCombatIntent(
+		float TargetDistance,
+		float MeleeRange,
+		float DashMinStartRange,
+		float DashProbability
+	);
+
+	EAshenOathBossCombatIntent GetPendingCombatIntent() const;
+	void ClearPendingCombatDecision();
+
+	// Consumes only an Approach decision and returns its center-to-center range in cm.
+	bool TryConsumeApproachDecision(float& OutRange);
+
+	// Consumes an Attack decision. Rejection leaves an Approach or Wait fallback for StateTree.
+	FAshenOathBossAttackStartResult RequestSelectedCombatAttack();
+
 	// Cancels only the currently owned request; expired handles have no effect.
 	bool CancelBossAttack(FAshenOathBossAttackRequestHandle Request);
 
@@ -145,6 +180,24 @@ private:
 
 	void HandleDeathStarted();
 
+	bool CanStartBossAttack(
+		EAshenOathBossAttackType AttackType,
+		FGameplayAbilitySpecHandle& OutSpecHandle
+	) const;
+	FAshenOathBossAttackRequestHandle ReserveBossAttackRequest(
+		FGameplayAbilitySpecHandle SpecHandle
+	);
+	FAshenOathBossAttackStartResult ResolveBossAttackStart(
+		FAshenOathBossAttackRequestHandle Request,
+		FGameplayAbilitySpecHandle SpecHandle,
+		bool bAccepted
+	);
+	FAshenOathBossAttackStartResult RequestSelectedDashAttack(
+		const FAshenOathBossCombatDecision& Decision
+	);
+	FAshenOathBossAttackStartResult RequestSelectedNearAttack(
+		const FAshenOathBossCombatDecision& Decision
+	);
 	FGameplayAbilitySpecHandle ResolveBossAttackSpec(EAshenOathBossAttackType AttackType) const;
 
 	void FinishBossAttackRequest(bool bWasCancelled);
@@ -199,6 +252,9 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Boss")
 	TSubclassOf<UAshenOathBossDashSwingAbility> DashSwingAbilityClass;
 
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|AI")
+	int32 CombatDecisionSeed = 1337;
+
 	FGameplayAbilitySpecHandle SingleSwingAbilitySpecHandle;
 	FGameplayAbilitySpecHandle ComboAbilitySpecHandle;
 	FGameplayAbilitySpecHandle ChargedSwingAbilitySpecHandle;
@@ -214,6 +270,8 @@ private:
 	FAshenOathBossAttackEndedEvent BossAttackEndedEvent;
 
 	uint64 NextBossAttackRequestValue = 1;
+	FAshenOathBossCombatDecision PendingCombatDecision;
+	FRandomStream CombatDecisionRandomStream;
 	int32 NextNearAttackIndex = 0;
 	bool bLastAttackWasDash = false;
 	bool bStartingBossAttack = false;

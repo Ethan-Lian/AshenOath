@@ -14,7 +14,8 @@
 | `UAshenOathBossSingleSwingAbility` | 校验单次挥击起始 Section 并启动近战执行；复用 MeleeAttack 的 Montage、Cost、会话和清理流程，不决定接近、恢复或下一招 |
 | `UAshenOathBossComboAbility` | 按 ActionData 的 Section 顺序自动衔接两至三段挥击；整套只建立一次 Melee 会话和一次 Cost |
 | `UAshenOathBossChargedSwingAbility` | 前摇进入循环，按配置时间释放重挥；开始时提交 Cost，释放时才建立 Melee 会话 |
-| `UAshenOathBossDashSwingAbility` | 快照目标方向和停止距离，以代码 Sweep 完成突进后才切入挥击并建立 Melee 会话；突进段无伤害窗口 |
+| `UAshenOathBossDashSwingAbility` | 循环播放原地跑段，以临时加速的 CharacterMovement 追踪玩家；进入停止距离后切入挥击并建立 Melee 会话，追击段无伤害窗口 |
+| `UAbilityTask_BossDashChase` | 逐帧将移动输入指向玩家并拥有本次移速覆盖；到达、受阻或取消时停止自己的移动并恢复原移速 |
 | `UAbilityTask_ApplyCombatMovement` | 按动作时间执行 Sweep 位移，接管并恢复 MovementMode/RootMotionMode |
 | `UAshenOathAbilityTask_RecoverFacing` | 在闪避末段按目标 Actor 的实时位置平滑恢复锁定朝向；目标失效或 Ability 结束时随即清理 |
 | `UCombatDefenseComponent` | 保存普通/完美闪避窗口、来源句柄和单次消费状态，仅增加/移除自己持有的窗口 Tag |
@@ -48,6 +49,8 @@
 连招的每个 `PlayerComboWindow` 必须完整落在对应 Montage Section 内，并与相邻窗口留出间隔。窗口开始时 Ability 根据当前 Section 决定下一段；跨越 Section 边界或彼此重叠会使下一段的开窗被忽略。
 
 Boss 近战复用同一执行基类，由 StateTree 经 Boss Character 的请求身份接口激活。请求若在 `TryActivateAbility` 内同步结束，直接返回成功或失败；仍在执行时，Task 再订阅携带请求句柄的结束事件。Task 退出先解除监听，再按句柄取消自己的攻击，因此旧请求不能取消下一招。第一阶段暂按距离选择突进，并轮换近距离三招；复杂 Utility 评分留待后续。
+
+第一阶段在玩家超过 300 cm 时需要接近；只有超过可配置的 500 cm 起冲距离、突进资源可用且上一招不是突进时，才按 `DashProbability` 尝试 DashSwing。未选中突进就正常寻路接近 300 cm。突进开始后，Ability 循环播放不含位移的 `DashSection`；追击 Task 将 `MaxWalkSpeed` 临时乘以 `DashSpeedMultiplier`，每帧按玩家实时位置向 CharacterMovement 提交移动输入并面向玩家。进入 `StopDistance` 后停止移动并恢复原移速，Ability 按玩家当前位置转向、建立 Melee 会话并跳到 `SwingSection`。突进不设最大时长或距离；目标失效、持续受阻与动作取消均结束追击，不会在射程外挥击。
 
 ## Notify 与检测会话
 

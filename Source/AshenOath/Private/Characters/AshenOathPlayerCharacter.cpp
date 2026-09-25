@@ -409,6 +409,23 @@ bool AAshenOathPlayerCharacter::RequestDodge(const FVector2D& MovementIntent)
 	const EAshenOathDodgeFacingMode FacingMode = bWantsBackwardDodge
 		? EAshenOathDodgeFacingMode::PreserveCurrentFacing
 		: EAshenOathDodgeFacingMode::FaceMovementDirection;
+	const FVector DodgeDirection = CalculateDodgeDirection(DodgeIntent);
+
+	FGameplayAbilitySpec* DodgeSpec =
+		AbilitySystemComponent->FindAbilitySpecFromHandle(DodgeAbilityHandle);
+	UAshenOathDodgeAbility* DodgeAbility = DodgeSpec
+		? Cast<UAshenOathDodgeAbility>(DodgeSpec->GetPrimaryInstance())
+		: nullptr;
+
+	return DodgeAbility && DodgeAbility->TryActivateWithMovementDirection(
+		DodgeDirection,
+		FacingMode
+	);
+}
+
+FVector AAshenOathPlayerCharacter::CalculateDodgeDirection(
+	const FVector2D& DodgeIntent) const
+{
 	FVector DodgeDirection = GetActorForwardVector();
 
 	if (!DodgeIntent.IsNearlyZero())
@@ -442,16 +459,7 @@ bool AAshenOathPlayerCharacter::RequestDodge(const FVector2D& MovementIntent)
 		}
 	}
 
-	FGameplayAbilitySpec* DodgeSpec =
-		AbilitySystemComponent->FindAbilitySpecFromHandle(DodgeAbilityHandle);
-	UAshenOathDodgeAbility* DodgeAbility = DodgeSpec
-		? Cast<UAshenOathDodgeAbility>(DodgeSpec->GetPrimaryInstance())
-		: nullptr;
-
-	return DodgeAbility && DodgeAbility->TryActivateWithMovementDirection(
-		DodgeDirection,
-		FacingMode
-	);
+	return DodgeDirection;
 }
 
 bool AAshenOathPlayerCharacter::RequestToggleLockOn()

@@ -18,14 +18,10 @@ public:
 	FName SwingSection = NAME_None;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat Action|Boss Dash Swing",
-		meta = (ClampMin = "0.0", Units = "cm"))
-	float MaxDashDistance = 0.0f;
+		meta = (ClampMin = "0.01", Units = "cm"))
+	float StopDistance = 300.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat Action|Boss Dash Swing",
-		meta = (ClampMin = "0.0", Units = "cm"))
-	float StopDistance = 0.0f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat Action|Boss Dash Swing",
-		meta = (ClampMin = "0.0", Units = "s"))
-	float DashDurationSeconds = 0.0f;
+		meta = (ClampMin = "1.01"))
+	float DashSpeedMultiplier = 2.0f;
 };

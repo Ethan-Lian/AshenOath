@@ -2,7 +2,7 @@
 
 当前系统实现键鼠 Move/Look/Dodge、相对视角移动和第三人称自由镜头。Controller 处理设备输入与映射归属并保存最近移动意图，Character 处理角色移动约束与闪避方向转换，CharacterMovement 执行移动。
 
-设计理由见 [ADR-0002](../adr/0002-player-input-and-character-boundary.md)，系统关系见 [架构总览](../architecture.md)。实现见 [PlayerController](../../Source/AshenOath/Private/Player/AshenOathPlayerController.cpp) 与 [Player Character](../../Source/AshenOath/Private/Characters/AshenOathPlayerCharacter.cpp)。
+设计理由见 [ADR-0002](../adr/0002-player-input-and-character-boundary.md)，系统关系见 [架构总览](../arch/architecture.md)。实现见 [PlayerController](../../Source/AshenOath/Private/Player/AshenOathPlayerController.cpp) 与 [Player Character](../../Source/AshenOath/Private/Characters/AshenOathPlayerCharacter.cpp)。
 
 ## 入口与运行链
 

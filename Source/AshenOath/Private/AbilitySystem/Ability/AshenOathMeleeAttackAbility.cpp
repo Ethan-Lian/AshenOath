@@ -120,7 +120,7 @@ bool UAshenOathMeleeAttackAbility::BeginMeleeExecution(
 	const FGameplayAbilityActorInfo* ActorInfo,
 	const FGameplayAbilityActivationInfo ActivationInfo,
 	const UAshenOathMeleeActionData* ActionData,
-	const bool bCommitConfiguredCost,
+	const EMeleeCostCommit CostCommit,
 	const FGameplayTag SetByCallerMagnitudeTag,
 	const float SetByCallerMagnitude)
 {
@@ -141,18 +141,18 @@ bool UAshenOathMeleeAttackAbility::BeginMeleeExecution(
 		return false;
 	}
 
-	ActiveMeleeSession = Melee->BeginSession(
-		ActionData->DamageEffect,
-		ActionData->bCanTriggerPerfectDodge,
-		ActionData->MeleeTraceRadius,
-		ActionData->MeleeTraceBones,
-		MeshComponent,
-		AnimInstance,
-		ActionData->Montage,
-		ActiveMontageInstanceId,
-		SetByCallerMagnitudeTag,
-		SetByCallerMagnitude
-	);
+	FCombatMeleeSessionRequest SessionRequest;
+	SessionRequest.DamageEffect = ActionData->DamageEffect;
+	SessionRequest.bCanTriggerPerfectDodge = ActionData->bCanTriggerPerfectDodge;
+	SessionRequest.TraceRadius = ActionData->MeleeTraceRadius;
+	SessionRequest.TraceBones = ActionData->MeleeTraceBones;
+	SessionRequest.SourceMesh = MeshComponent;
+	SessionRequest.SourceAnimInstance = AnimInstance;
+	SessionRequest.SourceMontage = Montage;
+	SessionRequest.MontageInstanceId = ActiveMontageInstanceId;
+	SessionRequest.SetByCallerMagnitudeTag = SetByCallerMagnitudeTag;
+	SessionRequest.SetByCallerMagnitude = SetByCallerMagnitude;
+	ActiveMeleeSession = Melee->BeginSession(SessionRequest);
 
 	if (!ActiveMeleeSession.IsValid())
 	{
@@ -161,7 +161,7 @@ bool UAshenOathMeleeAttackAbility::BeginMeleeExecution(
 	}
 
 	ActiveMeleeComponent = Melee;
-	if (!bCommitConfiguredCost)
+	if (CostCommit == EMeleeCostCommit::SkipConfigured)
 	{
 		return true;
 	}

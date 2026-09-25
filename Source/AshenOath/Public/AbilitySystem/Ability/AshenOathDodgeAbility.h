@@ -9,6 +9,7 @@ class UAbilityTask_ApplyCombatMovement;
 class UAbilityTask_PlayMontageAndWait;
 class UAshenOathAbilityTask_RecoverFacing;
 class UAshenOathDodgeActionData;
+class UAnimMontage;
 class UCombatDefenseComponent;
 
 enum class EAshenOathDodgeFacingMode : uint8
@@ -65,11 +66,44 @@ protected:
 	) override;
 
 private:
+	enum class EFinishReason : uint8
+	{
+		Completed,
+		Cancelled
+	};
+
 	bool IsActionDataReady(
 		const UAshenOathDodgeActionData* ActionData,
 		const FGameplayAbilityActorInfo* ActorInfo,
 		const FVector& MovementDirection
 	) const;
+	bool StartDodgeMontage(
+		const FGameplayAbilityActorInfo* ActorInfo,
+		const UAshenOathDodgeActionData* ActionData
+	);
+	bool IsDodgeMontageOwned(
+		const FGameplayAbilityActorInfo* ActorInfo,
+		const UAnimMontage* Montage
+	);
+	bool CommitConfiguredCost(
+		FGameplayAbilitySpecHandle Handle,
+		const FGameplayAbilityActorInfo* ActorInfo,
+		FGameplayAbilityActivationInfo ActivationInfo
+	);
+	bool StartDefenseWindow(
+		const FGameplayAbilityActorInfo* ActorInfo,
+		const UAshenOathDodgeActionData* ActionData,
+		double& OutExecutionStartWorldTime
+	);
+	bool StartFacingRecoveryIfNeeded(
+		const FGameplayAbilityActorInfo* ActorInfo,
+		const UAshenOathDodgeActionData* ActionData,
+		double ExecutionStartWorldTime
+	);
+	bool StartMovementTask(
+		const UAshenOathDodgeActionData* ActionData,
+		double ExecutionStartWorldTime
+	);
 
 	UCombatDefenseComponent* ResolveDefenseComponent(
 		const FGameplayAbilityActorInfo* ActorInfo
@@ -86,7 +120,7 @@ private:
 	UFUNCTION()
 	void HandleMovementFailed();
 
-	void FinishAbility(bool bWasCancelled);
+	void FinishAbility(EFinishReason Reason);
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAbilityTask_PlayMontageAndWait> MontageTask;

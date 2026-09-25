@@ -150,7 +150,7 @@ void UAshenOathBossChargedSwingAbility::BeginSwing()
 
 	if (!BeginMeleeExecution(
 		GetCurrentAbilitySpecHandle(), ActorInfo, GetCurrentActivationInfo(),
-		ActionData, false))
+		ActionData, EMeleeCostCommit::SkipConfigured))
 	{
 		return;
 	}

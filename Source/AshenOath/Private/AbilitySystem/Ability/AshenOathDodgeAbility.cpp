@@ -96,6 +96,47 @@ void UAshenOathDodgeAbility::ActivateAbility(
 		return;
 	}
 
+	if (!StartDodgeMontage(ActorInfo, ActionData))
+	{
+		FinishAbility(EFinishReason::Cancelled);
+		return;
+	}
+
+	if (!CommitConfiguredCost(Handle, ActorInfo, ActivationInfo))
+	{
+		FinishAbility(EFinishReason::Cancelled);
+		return;
+	}
+
+	double ExecutionStartWorldTime = 0.0;
+	if (!StartDefenseWindow(ActorInfo, ActionData, ExecutionStartWorldTime))
+	{
+		FinishAbility(EFinishReason::Cancelled);
+		return;
+	}
+
+	ApplyActiveFacing(ActorInfo);
+	if (!IsActive())
+	{
+		return;
+	}
+
+	if (!StartFacingRecoveryIfNeeded(ActorInfo, ActionData, ExecutionStartWorldTime))
+	{
+		FinishAbility(EFinishReason::Cancelled);
+		return;
+	}
+
+	if (!StartMovementTask(ActionData, ExecutionStartWorldTime))
+	{
+		FinishAbility(EFinishReason::Cancelled);
+	}
+}
+
+bool UAshenOathDodgeAbility::StartDodgeMontage(
+	const FGameplayAbilityActorInfo* ActorInfo,
+	const UAshenOathDodgeActionData* ActionData)
+{
 	UAbilityTask_PlayMontageAndWait* NewMontageTask =
 		UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
 			this,
@@ -111,8 +152,7 @@ void UAshenOathDodgeAbility::ActivateAbility(
 
 	if (!NewMontageTask)
 	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-		return;
+		return false;
 	}
 
 	MontageTask = NewMontageTask;
@@ -130,111 +170,108 @@ void UAshenOathDodgeAbility::ActivateAbility(
 	);
 	NewMontageTask->ReadyForActivation();
 
-	if (!IsActive())
-	{
-		return;
-	}
+	return IsActive() && IsDodgeMontageOwned(ActorInfo, ActionData->Montage);
+}
 
-	UAbilitySystemComponent* AbilitySystemComponent =
+bool UAshenOathDodgeAbility::IsDodgeMontageOwned(
+	const FGameplayAbilityActorInfo* ActorInfo,
+	const UAnimMontage* Montage)
+{
+	const UAbilitySystemComponent* AbilitySystemComponent =
 		ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
+	return AbilitySystemComponent &&
+		AbilitySystemComponent->IsAnimatingAbility(this) &&
+		AbilitySystemComponent->GetCurrentMontage() == Montage;
+}
 
-	if (!AbilitySystemComponent ||
-		!AbilitySystemComponent->IsAnimatingAbility(this) ||
-		AbilitySystemComponent->GetCurrentMontage() != ActionData->Montage)
-	{
-		FinishAbility(true);
-		return;
-	}
-
+bool UAshenOathDodgeAbility::CommitConfiguredCost(
+	const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayAbilityActivationInfo ActivationInfo)
+{
 	ResetCostApplicationResult();
 	const bool bCommitAccepted = CommitAbility(Handle, ActorInfo, ActivationInfo);
 
 	// Cost callbacks may synchronously cancel this execution.
-	if (!IsActive())
-	{
-		return;
-	}
+	return IsActive() && bCommitAccepted && DidCostApplicationSucceed();
+}
 
-	if (!bCommitAccepted || !DidCostApplicationSucceed())
-	{
-		FinishAbility(true);
-		return;
-	}
-
+bool UAshenOathDodgeAbility::StartDefenseWindow(
+	const FGameplayAbilityActorInfo* ActorInfo,
+	const UAshenOathDodgeActionData* ActionData,
+	double& OutExecutionStartWorldTime)
+{
 	UCombatDefenseComponent* Defense = ResolveDefenseComponent(ActorInfo);
 	UWorld* World = GetWorld();
 	if (!Defense || !World)
 	{
-		FinishAbility(true);
-		return;
+		return false;
 	}
 
-	const double ExecutionStartWorldTime = World->GetTimeSeconds();
+	OutExecutionStartWorldTime = World->GetTimeSeconds();
 	ActiveDefenseComponent = Defense;
 	ActiveDefenseWindow = Defense->BeginDodgeWindow(
 		this,
 		ActionData->WindowTags,
 		ActionData->WindowStartTime,
 		ActionData->WindowDuration,
-		ExecutionStartWorldTime,
+		OutExecutionStartWorldTime,
 		ActionData->PerfectDodgeWindowStartTime,
 		ActionData->PerfectDodgeWindowDuration
 	);
 
-	if (!ActiveDefenseWindow.IsValid())
+	const FCombatDefenseWindowHandle Window = ActiveDefenseWindow;
+	if (!IsActive() || !Window.IsValid())
 	{
-		FinishAbility(true);
-		return;
+		return false;
 	}
 
 	// The two-phase start lets EndAbility see the handle before adding a loose
 	// tag can synchronously invoke external cancellation logic.
-	if (!Defense->ActivateDodgeWindow(ActiveDefenseWindow) ||
-		!IsActive() ||
-		!Defense->OwnsWindow(ActiveDefenseWindow))
-	{
-		if (IsActive())
-		{
-			FinishAbility(true);
-		}
-		return;
-	}
+	const bool bActivated = Defense->ActivateDodgeWindow(Window);
+	return bActivated && IsActive() && Defense->OwnsWindow(Window);
+}
 
-	ApplyActiveFacing(ActorInfo);
-
+bool UAshenOathDodgeAbility::StartFacingRecoveryIfNeeded(
+	const FGameplayAbilityActorInfo* ActorInfo,
+	const UAshenOathDodgeActionData* ActionData,
+	const double ExecutionStartWorldTime)
+{
 	AActor* FacingTarget = ActiveFacingMode ==
 		EAshenOathDodgeFacingMode::FaceMovementDirection
 		? ResolveFacingTarget(ActorInfo)
 		: nullptr;
-	if (FacingTarget)
+	if (!FacingTarget)
 	{
-		const float RecoveryStartOffset = ActionData->MovementStartTime +
-			ActionData->MovementDuration;
-		UAshenOathAbilityTask_RecoverFacing* NewFacingRecoveryTask =
-			UAshenOathAbilityTask_RecoverFacing::RecoverFacing(
-				this,
-				TEXT("DodgeFacingRecovery"),
-				FacingTarget,
-				RecoveryStartOffset,
-				FacingRecoveryDuration,
-				ExecutionStartWorldTime
-			);
-
-		if (!NewFacingRecoveryTask)
-		{
-			FinishAbility(true);
-			return;
-		}
-
-		FacingRecoveryTask = NewFacingRecoveryTask;
-		NewFacingRecoveryTask->ReadyForActivation();
-
-		if (!IsActive())
-		{
-			return;
-		}
+		return true;
 	}
 
+	const float RecoveryStartOffset = ActionData->MovementStartTime +
+		ActionData->MovementDuration;
+	UAshenOathAbilityTask_RecoverFacing* NewFacingRecoveryTask =
+		UAshenOathAbilityTask_RecoverFacing::RecoverFacing(
+			this,
+			TEXT("DodgeFacingRecovery"),
+			FacingTarget,
+			RecoveryStartOffset,
+			FacingRecoveryDuration,
+			ExecutionStartWorldTime
+		);
+
+	if (!NewFacingRecoveryTask)
+	{
+		return false;
+	}
+
+	FacingRecoveryTask = NewFacingRecoveryTask;
+	NewFacingRecoveryTask->ReadyForActivation();
+	return IsActive();
+}
+
+bool UAshenOathDodgeAbility::StartMovementTask(
+	const UAshenOathDodgeActionData* ActionData,
+	const double ExecutionStartWorldTime)
+{
 	UAbilityTask_ApplyCombatMovement* NewMovementTask =
 		UAbilityTask_ApplyCombatMovement::ApplyCombatMovement(
 			this,
@@ -248,8 +285,7 @@ void UAshenOathDodgeAbility::ActivateAbility(
 
 	if (!NewMovementTask)
 	{
-		FinishAbility(true);
-		return;
+		return false;
 	}
 
 	MovementTask = NewMovementTask;
@@ -258,6 +294,7 @@ void UAshenOathDodgeAbility::ActivateAbility(
 		&UAshenOathDodgeAbility::HandleMovementFailed
 	);
 	NewMovementTask->ReadyForActivation();
+	return IsActive();
 }
 
 void UAshenOathDodgeAbility::EndAbility(
@@ -302,24 +339,32 @@ bool UAshenOathDodgeAbility::IsActionDataReady(
 	const FGameplayAbilityActorInfo* ActorInfo,
 	const FVector& MovementDirection) const
 {
-	if (!ActionData ||
-		!ActionData->Montage ||
-		ActionData->PlayRate <= KINDA_SMALL_NUMBER ||
-		ActionData->MovementDistance <= KINDA_SMALL_NUMBER ||
-		ActionData->MovementStartTime < 0.0f ||
-		ActionData->MovementDuration <= KINDA_SMALL_NUMBER ||
-		!FMath::IsFinite(FacingRecoveryDuration) ||
-		FacingRecoveryDuration <= KINDA_SMALL_NUMBER ||
-		MovementDirection.SizeSquared2D() <= SMALL_NUMBER ||
-		ActionData->WindowStartTime < 0.0f ||
-		ActionData->WindowDuration <= KINDA_SMALL_NUMBER ||
-		ActionData->PerfectDodgeWindowStartTime < 0.0f ||
-		ActionData->PerfectDodgeWindowDuration < 0.0f ||
-		!ActionData->WindowTags.HasTagExact(
-			AshenOathGameplayTags::State_Invulnerable) ||
-		!ActorInfo ||
-		!ActorInfo->GetAnimInstance() ||
-		!ActorInfo->SkeletalMeshComponent.IsValid())
+	if (!ActionData || !ActorInfo)
+	{
+		return false;
+	}
+
+	const bool bMontageReady = ActionData->Montage &&
+		ActionData->PlayRate > KINDA_SMALL_NUMBER;
+	const bool bMovementReady =
+		ActionData->MovementDistance > KINDA_SMALL_NUMBER &&
+		ActionData->MovementStartTime >= 0.0f &&
+		ActionData->MovementDuration > KINDA_SMALL_NUMBER &&
+		FMath::IsFinite(FacingRecoveryDuration) &&
+		FacingRecoveryDuration > KINDA_SMALL_NUMBER &&
+		MovementDirection.SizeSquared2D() > SMALL_NUMBER;
+	const bool bWindowReady =
+		ActionData->WindowStartTime >= 0.0f &&
+		ActionData->WindowDuration > KINDA_SMALL_NUMBER &&
+		ActionData->PerfectDodgeWindowStartTime >= 0.0f &&
+		ActionData->PerfectDodgeWindowDuration >= 0.0f &&
+		ActionData->WindowTags.HasTagExact(
+			AshenOathGameplayTags::State_Invulnerable);
+	const bool bAnimationSourceReady = ActorInfo->GetAnimInstance() &&
+		ActorInfo->SkeletalMeshComponent.IsValid();
+
+	if (!bMontageReady || !bMovementReady || !bWindowReady ||
+		!bAnimationSourceReady)
 	{
 		return false;
 	}
@@ -379,20 +424,20 @@ void UAshenOathDodgeAbility::ApplyActiveFacing(
 
 void UAshenOathDodgeAbility::HandleMontageCompleted()
 {
-	FinishAbility(false);
+	FinishAbility(EFinishReason::Completed);
 }
 
 void UAshenOathDodgeAbility::HandleMontageInterrupted()
 {
-	FinishAbility(true);
+	FinishAbility(EFinishReason::Cancelled);
 }
 
 void UAshenOathDodgeAbility::HandleMovementFailed()
 {
-	FinishAbility(true);
+	FinishAbility(EFinishReason::Cancelled);
 }
 
-void UAshenOathDodgeAbility::FinishAbility(const bool bWasCancelled)
+void UAshenOathDodgeAbility::FinishAbility(const EFinishReason Reason)
 {
 	if (!IsActive())
 	{
@@ -410,6 +455,6 @@ void UAshenOathDodgeAbility::FinishAbility(const bool bWasCancelled)
 		ActorInfo,
 		GetCurrentActivationInfo(),
 		true,
-		bWasCancelled
+		Reason == EFinishReason::Cancelled
 	);
 }

@@ -3,9 +3,9 @@
 #include "AbilitySystem/Data/AshenOathBossDashSwingActionData.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
+#include "AbilitySystem/Tasks/AbilityTask_BossDashChase.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameplayTags/AshenOathGameplayTags.h"
-#include "Tasks/AbilityTask_ApplyCombatMovement.h"
 
 UAshenOathBossDashSwingAbility::UAshenOathBossDashSwingAbility()
 {
@@ -47,19 +47,14 @@ void UAshenOathBossDashSwingAbility::ActivateAbility(
 		Cast<UAshenOathBossDashSwingActionData>(ResolveActionData(Handle, ActorInfo));
 	AActor* Avatar = ActorInfo ? ActorInfo->AvatarActor.Get() : nullptr;
 	APawn* Target = Avatar ? UGameplayStatics::GetPlayerPawn(Avatar, 0) : nullptr;
-	UWorld* World = GetWorld();
-	if (!IsDashSwingDataReady(ActionData) || !IsValid(Avatar) ||
-		!IsValid(Target) || !World)
+	if (!IsDashSwingDataReady(ActionData) || !IsValid(Avatar) || !IsValid(Target))
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
 
-	const FVector ToTarget = Target->GetActorLocation() - Avatar->GetActorLocation();
-	const float Distance = FMath::Min(
-		FMath::Max(ToTarget.Size2D() - ActionData->StopDistance, 0.0f),
-		ActionData->MaxDashDistance);
-	if (Distance <= KINDA_SMALL_NUMBER)
+	if (FVector::Dist2D(Avatar->GetActorLocation(), Target->GetActorLocation()) <=
+		ActionData->StopDistance + KINDA_SMALL_NUMBER)
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
@@ -93,11 +88,10 @@ void UAshenOathBossDashSwingAbility::ActivateAbility(
 		return;
 	}
 
-	UAbilityTask_ApplyCombatMovement* NewMovementTask =
-		UAbilityTask_ApplyCombatMovement::ApplyCombatMovement(
-			this, TEXT("BossDashMovement"), ToTarget.GetSafeNormal2D(),
-			Distance, 0.0f, ActionData->DashDurationSeconds,
-			World->GetTimeSeconds());
+	UAbilityTask_BossDashChase* NewMovementTask =
+		UAbilityTask_BossDashChase::ChaseTarget(
+			this, TEXT("BossDashChase"), Target,
+			ActionData->StopDistance, ActionData->DashSpeedMultiplier);
 	if (!NewMovementTask)
 	{
 		FinishAbility(true);
@@ -105,7 +99,7 @@ void UAshenOathBossDashSwingAbility::ActivateAbility(
 	}
 
 	MovementTask = NewMovementTask;
-	NewMovementTask->OnCompleted.AddDynamic(
+	NewMovementTask->OnReached.AddDynamic(
 		this, &UAshenOathBossDashSwingAbility::HandleDashCompleted);
 	NewMovementTask->OnFailed.AddDynamic(
 		this, &UAshenOathBossDashSwingAbility::HandleDashFailed);
@@ -134,9 +128,9 @@ bool UAshenOathBossDashSwingAbility::IsDashSwingDataReady(
 		ActionData->DashSection != ActionData->SwingSection &&
 		ActionData->Montage->IsValidSectionName(ActionData->DashSection) &&
 		ActionData->Montage->IsValidSectionName(ActionData->SwingSection) &&
-		ActionData->MaxDashDistance > KINDA_SMALL_NUMBER &&
-		ActionData->StopDistance >= 0.0f &&
-		ActionData->DashDurationSeconds > KINDA_SMALL_NUMBER &&
+		ActionData->StopDistance > KINDA_SMALL_NUMBER &&
+		FMath::IsFinite(ActionData->DashSpeedMultiplier) &&
+		ActionData->DashSpeedMultiplier > 1.0f &&
 		(ActionData->StartSection.IsNone() ||
 			ActionData->StartSection == ActionData->DashSection);
 }
@@ -158,9 +152,25 @@ void UAshenOathBossDashSwingAbility::HandleDashCompleted()
 		return;
 	}
 
+	AActor* Avatar = ActorInfo->AvatarActor.Get();
+	const APawn* Target = Avatar ? UGameplayStatics::GetPlayerPawn(Avatar, 0) : nullptr;
+	if (!IsValid(Avatar) || !IsValid(Target) ||
+		FVector::Dist2D(Avatar->GetActorLocation(), Target->GetActorLocation()) >
+			ActionData->StopDistance + KINDA_SMALL_NUMBER)
+	{
+		FinishAbility(true);
+		return;
+	}
+
+	const FVector ToTarget = Target->GetActorLocation() - Avatar->GetActorLocation();
+	if (!ToTarget.IsNearlyZero())
+	{
+		Avatar->SetActorRotation(FRotator(0.0f, ToTarget.Rotation().Yaw, 0.0f));
+	}
+
 	if (!BeginMeleeExecution(
 		GetCurrentAbilitySpecHandle(), ActorInfo, GetCurrentActivationInfo(),
-		ActionData, false))
+		ActionData, EMeleeCostCommit::SkipConfigured))
 	{
 		return;
 	}

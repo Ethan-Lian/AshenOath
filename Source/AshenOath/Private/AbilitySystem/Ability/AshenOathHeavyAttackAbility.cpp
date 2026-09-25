@@ -87,26 +87,40 @@ void UAshenOathHeavyAttackAbility::ActivateAbility(
 		return;
 	}
 
+	if (!StartCharging(ActorInfo, HeavyData, World))
+	{
+		FinishAbility(true);
+	}
+}
+
+bool UAshenOathHeavyAttackAbility::StartCharging(
+	const FGameplayAbilityActorInfo* ActorInfo,
+	const UAshenOathHeavyAttackData* HeavyData,
+	UWorld* World)
+{
 	ActiveHeavyData = HeavyData;
 	ActivePhase = EAshenOathHeavyAttackPhase::Charging;
 	ChargeStartedAtSeconds = World->GetTimeSeconds();
 	AccumulatedChargeStaminaCost = 0.0f;
 	AcquireMovementLock();
+	if (!IsActive())
+	{
+		return false;
+	}
 
 	if (!StartAttackMontage(
 		ActorInfo,
 		HeavyData,
 		HeavyData->ChargeStartSection))
 	{
-		return;
+		return false;
 	}
 
 	UAnimInstance* AnimInstance = GetActiveAttackAnimInstance();
 	UAnimMontage* Montage = GetActiveAttackMontage();
 	if (!AnimInstance || !Montage)
 	{
-		FinishAbility(true);
-		return;
+		return false;
 	}
 
 	AnimInstance->Montage_SetNextSection(
@@ -134,6 +148,7 @@ void UAshenOathHeavyAttackAbility::ActivateAbility(
 		HeavyData->MaxChargeDurationSeconds,
 		false
 	);
+	return IsActive();
 }
 
 void UAshenOathHeavyAttackAbility::EndAbility(
@@ -217,7 +232,13 @@ bool UAshenOathHeavyAttackAbility::StartChargedRelease()
 		return false;
 	}
 
+	const int32 ChargeMontageInstanceId = GetActiveAttackMontageInstanceId();
 	ConsumeChargeThroughCurrentTime();
+	if (!IsActive() || ActivePhase != EAshenOathHeavyAttackPhase::Charging ||
+		GetActiveAttackMontageInstanceId() != ChargeMontageInstanceId)
+	{
+		return false;
+	}
 
 	World->GetTimerManager().ClearTimer(ChargeDrainTimer);
 	World->GetTimerManager().ClearTimer(MaximumChargeTimer);
@@ -226,13 +247,18 @@ bool UAshenOathHeavyAttackAbility::StartChargedRelease()
 
 	ActivePhase = EAshenOathHeavyAttackPhase::ChargedRelease;
 	AlignChargedReleaseToActiveBoss();
+	if (!IsActive() || ActivePhase != EAshenOathHeavyAttackPhase::ChargedRelease ||
+		GetActiveAttackMontageInstanceId() != ChargeMontageInstanceId)
+	{
+		return false;
+	}
 
 	if (!BeginMeleeExecution(
 		GetCurrentAbilitySpecHandle(),
 		ActorInfo,
 		GetCurrentActivationInfo(),
 		HeavyData,
-		false,
+		EMeleeCostCommit::SkipConfigured,
 		AshenOathGameplayTags::Data_Damage,
 		DamageMagnitude))
 	{
@@ -259,6 +285,7 @@ bool UAshenOathHeavyAttackAbility::ConsumeChargeThroughCurrentTime()
 	{
 		return false;
 	}
+	const int32 ChargeMontageInstanceId = GetActiveAttackMontageInstanceId();
 
 	const double ElapsedSeconds = FMath::Clamp(
 		World->GetTimeSeconds() - ChargeStartedAtSeconds,
@@ -318,12 +345,18 @@ bool UAshenOathHeavyAttackAbility::ConsumeChargeThroughCurrentTime()
 		0.0f,
 		PayableCost
 	);
-	AccumulatedChargeStaminaCost = FMath::Min(
-		AccumulatedChargeStaminaCost + ActualCost,
-		HeavyData->MaxChargeStaminaCost
-	);
+	const bool bOwnsCharge = IsActive() &&
+		ActivePhase == EAshenOathHeavyAttackPhase::Charging &&
+		GetActiveAttackMontageInstanceId() == ChargeMontageInstanceId;
+	if (bOwnsCharge)
+	{
+		AccumulatedChargeStaminaCost = FMath::Min(
+			AccumulatedChargeStaminaCost + ActualCost,
+			HeavyData->MaxChargeStaminaCost
+		);
+	}
 
-	if (ActualCost > KINDA_SMALL_NUMBER)
+	if (ActualCost > KINDA_SMALL_NUMBER && IsValid(AvatarActor))
 	{
 		if (UAshenOathStaminaRecoveryComponent* Recovery =
 			AvatarActor->FindComponentByClass<UAshenOathStaminaRecoveryComponent>())
@@ -332,7 +365,9 @@ bool UAshenOathHeavyAttackAbility::ConsumeChargeThroughCurrentTime()
 		}
 	}
 
-	return ActualCost + KINDA_SMALL_NUMBER >= RequestedCost &&
+	return bOwnsCharge && IsActive() &&
+		GetActiveAttackMontageInstanceId() == ChargeMontageInstanceId &&
+		ActualCost + KINDA_SMALL_NUMBER >= RequestedCost &&
 		StaminaAfter > KINDA_SMALL_NUMBER;
 }
 
@@ -504,8 +539,8 @@ void UAshenOathHeavyAttackAbility::AcquireMovementLock()
 		return;
 	}
 
-	AbilitySystem->AddLooseGameplayTag(AshenOathGameplayTags::State_MovementLocked);
 	bOwnsMovementLock = true;
+	AbilitySystem->AddLooseGameplayTag(AshenOathGameplayTags::State_MovementLocked);
 }
 
 void UAshenOathHeavyAttackAbility::ReleaseMovementLock()

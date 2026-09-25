@@ -4,6 +4,7 @@
 
 #include "AbilitySystemComponent.h"
 #include "AbilitySystem/Data/AshenOathMeleeActionData.h"
+#include "AbilitySystem/Data/AshenOathBossDashSwingActionData.h"
 #include "Actions/CombatMeleeComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -51,6 +52,20 @@ bool FAshenOathBossSingleSwingAbilityLifecycleTest::RunTest(const FString& Param
 	{
 		CleanupWorld();
 		return false;
+	}
+
+	const UAshenOathBossDashSwingActionData* DashAction =
+		LoadObject<UAshenOathBossDashSwingActionData>(
+			nullptr,
+			TEXT("/Game/AshenOath/CombatData/Boss/DA_Boss_DashSwing.DA_Boss_DashSwing")
+		);
+	TestNotNull(TEXT("Boss DashSwing ActionData loads"), DashAction);
+	if (DashAction)
+	{
+		TestTrue(TEXT("DashSwing stops at a reachable swing distance"),
+			DashAction->StopDistance > 0.0f && DashAction->StopDistance <= 300.0f);
+		TestTrue(TEXT("DashSwing increases movement speed"),
+			DashAction->DashSpeedMultiplier > 1.0f);
 	}
 
 	UAshenOathMeleeActionData* TestActionData = NewObject<UAshenOathMeleeActionData>(Boss);
@@ -205,6 +220,40 @@ bool FAshenOathBossSingleSwingAbilityLifecycleTest::RunTest(const FString& Param
 	Boss->CancelBossAttack(SecondRequest.RequestHandle);
 	TestEqual(TEXT("Each owned request emits one completion"), RequestEndCount, 2);
 	Boss->OnBossAttackEnded().Remove(RequestEndHandle);
+
+	TestTrue(TEXT("A missed dash roll produces an approach decision at any distance"),
+		Boss->ChooseFirstPhaseCombatIntent(900.0f, 300.0f, 500.0f, 0.0f));
+	TestEqual(TEXT("The missed dash roll selects normal approach"),
+		Boss->GetPendingCombatIntent(), EAshenOathBossCombatIntent::Approach);
+	float ApproachRange = 0.0f;
+	TestTrue(TEXT("The approach decision can be consumed once"),
+		Boss->TryConsumeApproachDecision(ApproachRange));
+	TestEqual(TEXT("The distant approach ends at melee range"),
+		ApproachRange, 300.0f);
+	TestFalse(TEXT("The same approach decision cannot be consumed again"),
+		Boss->TryConsumeApproachDecision(ApproachRange));
+
+	TestTrue(TEXT("A target at the dash threshold produces an approach decision"),
+		Boss->ChooseFirstPhaseCombatIntent(500.0f, 300.0f, 500.0f, 1.0f));
+	TestTrue(TEXT("The threshold decision approaches melee range"),
+		Boss->TryConsumeApproachDecision(ApproachRange));
+	TestEqual(TEXT("The melee approach uses the configured range"),
+		ApproachRange, 300.0f);
+
+	TestTrue(TEXT("An eligible dash has no maximum start range"),
+		Boss->ChooseFirstPhaseCombatIntent(900.0f, 300.0f, 500.0f, 1.0f));
+	TestEqual(TEXT("The dash opportunity becomes an attack intent"),
+		Boss->GetPendingCombatIntent(), EAshenOathBossCombatIntent::Attack);
+	TestEqual(TEXT("A rejected dash returns to a melee approach"),
+		Boss->RequestSelectedCombatAttack().State, EAshenOathBossAttackStartState::Rejected);
+	TestTrue(TEXT("A rejected dash sets a safe approach fallback"),
+		Boss->TryConsumeApproachDecision(ApproachRange));
+	TestEqual(TEXT("The dash fallback approaches melee range"),
+		ApproachRange, 300.0f);
+	TestTrue(TEXT("A nearby target produces a combat decision"),
+		Boss->ChooseFirstPhaseCombatIntent(150.0f, 300.0f, 500.0f, 1.0f));
+	TestEqual(TEXT("A nearby target selects a melee attack"),
+		Boss->GetPendingCombatIntent(), EAshenOathBossCombatIntent::Attack);
 
 	TestActionData->StartSection = TEXT("MissingSection");
 	TestFalse(TEXT("An invalid Boss start section rejects activation"),

@@ -53,7 +53,8 @@ void UAshenOathBossSingleSwingAbility::ActivateAbility(
 		return;
 	}
 
-	BeginMeleeExecution(Handle, ActorInfo, ActivationInfo, ActionData, true);
+	BeginMeleeExecution(Handle, ActorInfo, ActivationInfo, ActionData,
+		EMeleeCostCommit::CommitConfigured);
 }
 
 bool UAshenOathBossSingleSwingAbility::IsActionDataReady(

@@ -30,7 +30,7 @@
 
 ## 文档
 
-- [架构总览](docs/architecture.md)
+- [架构总览](docs/arch/architecture.md)
 - [战斗动作与伤害](docs/systems/combat-actions.md)
 - [GAS 与属性系统](docs/systems/ability-system.md)
 - [玩家控制与镜头](docs/systems/player-control-camera.md)

@@ -67,7 +67,8 @@ void UAshenOathBossComboAbility::ActivateAbility(
 			ActionData->SwingSections[Index], NextSection, Montage);
 	}
 
-	BeginMeleeExecution(Handle, ActorInfo, ActivationInfo, ActionData, true);
+	BeginMeleeExecution(Handle, ActorInfo, ActivationInfo, ActionData,
+		EMeleeCostCommit::CommitConfigured);
 }
 
 bool UAshenOathBossComboAbility::IsComboActionDataReady(

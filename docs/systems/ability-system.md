@@ -2,7 +2,7 @@
 
 当前系统为玩家和 Boss 提供 ASC、生命/耐力属性、初始 GameplayEffect 入口和共享状态 Tag。单段近战伤害、动作耐力消耗、延迟恢复、普通/完美闪避、基础受击与 Health 归零后的死亡/胜负/重试流程已接入。
 
-设计理由见 [ADR-0001](../adr/0001-character-owned-ability-system.md)，系统关系见 [架构总览](../architecture.md)。
+设计理由见 [ADR-0001](../adr/0001-character-owned-ability-system.md)，系统关系见 [架构总览](../arch/architecture.md)。
 
 ## 所有权与入口
 
