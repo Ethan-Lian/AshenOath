@@ -1,6 +1,27 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "GameplayTagContainer.h"
+
+class UAnimInstance;
+class UAnimMontage;
+class UGameplayEffect;
+class USkeletalMeshComponent;
+
+/** Input snapshot for one melee session. Source pointers are borrowed during BeginSession. */
+struct ASHENOATHCOMBAT_API FCombatMeleeSessionRequest
+{
+	TSubclassOf<UGameplayEffect> DamageEffect;
+	bool bCanTriggerPerfectDodge = false;
+	float TraceRadius = 0.0f;
+	TArray<FName> TraceBones;
+	USkeletalMeshComponent* SourceMesh = nullptr;
+	UAnimInstance* SourceAnimInstance = nullptr;
+	UAnimMontage* SourceMontage = nullptr;
+	int32 MontageInstanceId = INDEX_NONE;
+	FGameplayTag SetByCallerMagnitudeTag;
+	float SetByCallerMagnitude = 0.0f;
+};
 
 /**
  * Identifies one active melee detection session.

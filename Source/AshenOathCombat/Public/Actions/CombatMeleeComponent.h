@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Actions/CombatMeleeTypes.h"
 #include "Components/ActorComponent.h"
+#include "GameplayTagContainer.h"
 #include "CombatMeleeComponent.generated.h"
 
 class AActor;
@@ -32,6 +33,8 @@ class ASHENOATHCOMBAT_API UCombatMeleeComponent : public UActorComponent
 public:
 	UCombatMeleeComponent();
 
+	// Checks the damage, trace, Mesh, and AnimInstance prerequisites without
+	// changing the currently owned session.
 	bool CanStartSession(
 		TSubclassOf<UGameplayEffect> DamageEffect,
 		float TraceRadius,
@@ -40,20 +43,15 @@ public:
 		const UAnimInstance* SourceAnimInstance
 	) const;
 
-	FCombatMeleeSessionHandle BeginSession(
-		TSubclassOf<UGameplayEffect> DamageEffect,
-		bool bCanTriggerPerfectDodge,
-		float TraceRadius,
-		const TArray<FName>& TraceBones,
-		USkeletalMeshComponent* SourceMesh,
-		UAnimInstance* SourceAnimInstance,
-		UAnimMontage* SourceMontage,
-		int32 MontageInstanceId
-	);
+	// Starts only for the exact active Montage instance. The optional SetByCaller
+	// value is forwarded to accepted hits; failure returns an invalid handle.
+	FCombatMeleeSessionHandle BeginSession(const FCombatMeleeSessionRequest& Request);
 
+	// Ends the session only when SessionHandle still identifies the active one.
 	void EndSession(const FCombatMeleeSessionHandle& SessionHandle);
 	// Force-clears the currently owned session during terminal-state cleanup.
 	void ResetCombatState();
+	// Checks whether SessionHandle still owns the current melee session.
 	bool IsSessionActive(const FCombatMeleeSessionHandle& SessionHandle) const;
 	bool HasActiveSession() const;
 
@@ -80,6 +78,7 @@ public:
 		int32 NotifyInstanceId
 	);
 
+	// Checks whether this session currently owns an open animation hit window.
 	bool IsHitWindowActive(const FCombatMeleeSessionHandle& SessionHandle) const;
 	bool HasActiveHitWindow() const;
 
@@ -143,6 +142,8 @@ private:
 	// Immutable snapshot copied from the action configuration at session start.
 	UPROPERTY(Transient)
 	TSubclassOf<UGameplayEffect> ActiveDamageEffect;
+	FGameplayTag ActiveSetByCallerMagnitudeTag;
+	float ActiveSetByCallerMagnitude = 0.0f;
 
 	TArray<FName> ActiveMeleeTraceBones;
 	float ActiveMeleeTraceRadius = 0.0f;

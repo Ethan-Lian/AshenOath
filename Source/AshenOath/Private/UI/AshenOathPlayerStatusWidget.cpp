@@ -26,6 +26,9 @@ void UAshenOathPlayerStatusWidget::ObservePlayer(AAshenOathPlayerCharacter* Play
 	}
 
 	ObservedAbilitySystem = AbilitySystemComponent;
+	ObservedPlayer = Player;
+	HealUsesChangedHandle = Player->OnHealUsesChanged().AddUObject(
+		this, &UAshenOathPlayerStatusWidget::HandleHealUsesChanged);
 
 	HealthChangedHandle =
 		AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(UAshenOathAttributeSet::GetHealthAttribute())
@@ -48,6 +51,7 @@ void UAshenOathPlayerStatusWidget::ObservePlayer(AAshenOathPlayerCharacter* Play
 	RefreshHealth();
 
 	RefreshStamina();
+	RefreshHealUses();
 }
 
 void UAshenOathPlayerStatusWidget::NativeDestruct()
@@ -117,8 +121,35 @@ void UAshenOathPlayerStatusWidget::RefreshStamina()
 	}
 }
 
+void UAshenOathPlayerStatusWidget::RefreshHealUses()
+{
+	AAshenOathPlayerCharacter* Player = ObservedPlayer.Get();
+	if (Player && HealUsesText)
+	{
+		HealUsesText->SetText(FText::Format(
+			NSLOCTEXT("AshenOathUI", "PlayerHealUsesFormat", "Heals: {0}"),
+			FText::AsNumber(Player->GetRemainingHealUses())
+		));
+	}
+}
+
+void UAshenOathPlayerStatusWidget::HandleHealUsesChanged(const int32)
+{
+	RefreshHealUses();
+}
+
 void UAshenOathPlayerStatusWidget::UnbindAttributes()
 {
+	if (AAshenOathPlayerCharacter* Player = ObservedPlayer.Get())
+	{
+		if (HealUsesChangedHandle.IsValid())
+		{
+			Player->OnHealUsesChanged().Remove(HealUsesChangedHandle);
+		}
+	}
+	HealUsesChangedHandle.Reset();
+	ObservedPlayer.Reset();
+
 	if (UAbilitySystemComponent* AbilitySystem = ObservedAbilitySystem.Get())
 	{
 		if (HealthChangedHandle.IsValid())

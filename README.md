@@ -6,7 +6,7 @@
 
 - 基于 Enhanced Input 的移动、自由镜头、轻击和前后闪避。
 - 由 Gameplay Ability System（GAS）管理生命、耐力、动作消耗、伤害、无敌状态和耐力恢复。
-- 单段轻击：Montage 播放、武器扫掠、窗口内命中去重及目标侧伤害判定。
+- 轻击连招：显式 Combo Window、Montage Section 推进、武器扫掠、窗口内命中去重及目标侧伤害判定。
 - 前后闪避：方向快照、代码驱动位移、碰撞 Sweep 和时间窗口无敌。
 - 玩家与 Boss 各自持有 Ability System Component 和 AttributeSet。
 - Boss StateTree 的初始化与退出生命周期。
@@ -22,20 +22,19 @@
 
 战斗动作由具体 `GameplayAbility` 持有生命周期：
 
-- `UAshenOathLightAttackAbility` 协调 Montage、Cost 和近战检测会话。
+- `UAshenOathMeleeAttackAbility` 统一管理玩家与 Boss 近战的 Montage、Cost、检测会话和清理；`UAshenOathComboAttackAbility` 实现轻击连招输入与段落推进。
 - `UAshenOathDodgeAbility` 协调 Montage、Cost、位移 Task 和闪避窗口。
-- `UCombatActionData` 只保存动作配置，不保存运行时执行状态。
+- 游戏模块的 `UAshenOathActionData` 及其近战、闪避派生类型只保存动作配置，不保存运行时执行状态；Combat 模块通过参数接收所需配置。
 
 依赖方向保持单向：`AshenOath` 负责组装 `AshenOathCombat`；通用战斗模块不引用具体玩家、Boss 或 UI 类型。
 
 ## 文档
 
-- [架构总览](docs/architecture.md)
+- [架构总览](docs/arch/architecture.md)
 - [战斗动作与伤害](docs/systems/combat-actions.md)
 - [GAS 与属性系统](docs/systems/ability-system.md)
 - [玩家控制与镜头](docs/systems/player-control-camera.md)
 - [动画移动表现](docs/systems/locomotion-animation.md)
-- [ADR：GameplayAbility 拥有动作生命周期](docs/adr/0003-gameplay-ability-owns-combat-action-lifecycle.md)
 
 ## 环境与范围
 

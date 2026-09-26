@@ -49,10 +49,19 @@ private:
 	TObjectPtr<UInputAction> LookAction;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Input")
-	TObjectPtr<UInputAction> LightAttackAction;
+	TObjectPtr<UInputAction> ComboAttackAction;
+
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Input")
+	TObjectPtr<UInputAction> HeavyAttackAction;
+
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Input")
+	TObjectPtr<UInputAction> HealAction;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Input")
 	TObjectPtr<UInputAction> DodgeAction;
+
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Input")
+	TObjectPtr<UInputAction> LockOnAction;
 
 	// Input bindings belong to a specific InputComponent.
 	// Possession may change independently, so avoid binding the same component twice.
@@ -72,8 +81,12 @@ private:
 
 	void HandleMove(const FInputActionValue& Value);
 	void HandleLook(const FInputActionValue& Value);
-	void HandleLightAttack();
+	void HandleComboAttack();
+	void HandleHeavyAttackPressed();
+	void HandleHeavyAttackReleased();
+	void HandleHeal();
 	void HandleDodge();
+	void HandleToggleLockOn();
 
 	// Input setup and possession become ready independently.
 	// These helpers keep MappingContext registration idempotent across both lifecycle paths.

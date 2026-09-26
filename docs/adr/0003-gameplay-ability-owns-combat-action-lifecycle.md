@@ -10,11 +10,11 @@
 
 每个具体 GameplayAbility 唯一拥有本次动作的流程和结束语义；随执行结束的异步工作由 AbilityTask 管理；跨动作或可复用的算法状态由能力组件管理。
 
-单段轻击由 `UAshenOathLightAttackAbility` 协调 `UAbilityTask_PlayMontageAndWait`、Cost 和 `UCombatMeleeComponent`。Melee 独立分配检测会话，保存配置和 Montage 播放实例身份。共享 Notify 直接把 UE 提供的动画来源身份交给 Melee，不查询“当前 Ability”。
+玩家与 Boss 的近战由抽象的 `UAshenOathMeleeAttackAbility` 统一协调 `UAbilityTask_PlayMontageAndWait`、Cost、动画来源身份和 `UCombatMeleeComponent` 会话清理。具体的 `UAshenOathComboAttackAbility`、`UAshenOathHeavyAttackAbility` 与 `UAshenOathBossSingleSwingAbility` 继承该执行层，分别保留连招输入状态、蓄力状态和 Boss 单次挥击配置校验。Melee 独立分配检测会话，保存配置和 Montage 播放实例身份。共享 Notify 直接把 UE 提供的动画来源身份交给 Melee，不查询“当前 Ability”。
 
-闪避由 `UAshenOathDodgeAbility` 协调 Montage、`UAbilityTask_ApplyCombatMovement` 和 `UCombatDefenseComponent`。位移 Task 只拥有本次移动接管，Defense 只拥有窗口时间、来源句柄和自己施加的 Tag；`UAshenOathStaminaRecoveryComponent` 独立拥有跨动作的延迟与恢复 Effect。轻击和闪避通过薄 `UAshenOathCombatAbility` 共享费用事务，不共享各自流程。
+闪避由 `UAshenOathDodgeAbility` 协调 Montage、Travel 位移 Task、项目层 FacingRecovery Task 和 `UCombatDefenseComponent`。位移 Task 只拥有本次移动接管，FacingRecovery 只拥有闪避末段的目标朝向过渡，Defense 只拥有窗口时间、来源句柄和自己施加的 Tag；`UAshenOathStaminaRecoveryComponent` 独立拥有跨动作的延迟与恢复 Effect。Combo、Heavy 和 Dodge 通过薄 `UAshenOathCombatAbility` 共享 GAS 事务，但各自保留连招、蓄力和闪避流程状态。
 
-`FGameplayAbilitySpecHandle` 仅标识授予记录，不代表某次执行。旧回调隔离使用 UE 的 Montage 实例 ID；目标侧伤害请求不携带没有消费者的动作执行编号，窗口内去重由 Melee 自己的会话状态完成。
+`FGameplayAbilitySpecHandle` 仅标识授予记录，不代表某次执行。旧回调隔离使用 UE 的 Montage 实例 ID；目标侧伤害请求不携带没有消费者的动作执行编号，窗口内去重由 Melee 自己的会话状态完成。游戏模块拥有 ActionData 类，通用基类仅保留动作共享的动画和费用配置；近战与闪避的数据分型，连招与重击各自扩展近战配置。Combat 模块只接收 Ability 提供的参数，不读取这些 DataAsset。
 
 ## 取舍
 

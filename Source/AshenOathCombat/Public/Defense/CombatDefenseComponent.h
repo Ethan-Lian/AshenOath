@@ -57,8 +57,11 @@ public:
 	void ResetDefenseState();
 
 	bool OwnsWindow(FCombatDefenseWindowHandle Handle) const;
+
 	bool IsDodgeWindowActiveAt(const FGameplayTag& Tag, double WorldTimeSeconds) const;
+
 	bool TryConsumePerfectDodge(const FGameplayTag& Tag, double WorldTimeSeconds);
+
 	bool IsWindowTagApplied(const FGameplayTag& Tag) const;
 
 protected:
@@ -66,9 +69,13 @@ protected:
 
 private:
 	int32 AllocateWindowId();
+
 	UAbilitySystemComponent* ResolveAbilitySystemComponent() const;
+
 	void UpdateWindowState(double WorldTimeSeconds);
+
 	void ActivateWindowTags();
+
 	void DeactivateWindowTags();
 
 	FCombatDefenseWindowHandle CurrentWindow;
@@ -81,6 +88,7 @@ private:
 	double WindowEndWorldTime = 0.0;
 	double PerfectDodgeWindowStartWorldTime = 0.0;
 	double PerfectDodgeWindowEndWorldTime = 0.0;
+
 	bool bPerfectDodgeConsumed = false;
 
 	int32 NextWindowId = 1;

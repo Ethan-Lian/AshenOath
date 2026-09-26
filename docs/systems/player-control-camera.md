@@ -2,7 +2,7 @@
 
 当前系统实现键鼠 Move/Look/Dodge、相对视角移动和第三人称自由镜头。Controller 处理设备输入与映射归属并保存最近移动意图，Character 处理角色移动约束与闪避方向转换，CharacterMovement 执行移动。
 
-设计理由见 [ADR-0002](../adr/0002-player-input-and-character-boundary.md)，系统关系见 [架构总览](../architecture.md)。实现见 [PlayerController](../../Source/AshenOath/Private/Player/AshenOathPlayerController.cpp) 与 [Player Character](../../Source/AshenOath/Private/Characters/AshenOathPlayerCharacter.cpp)。
+设计理由见 [ADR-0002](../adr/0002-player-input-and-character-boundary.md)，系统关系见 [架构总览](../arch/architecture.md)。实现见 [PlayerController](../../Source/AshenOath/Private/Player/AshenOathPlayerController.cpp) 与 [Player Character](../../Source/AshenOath/Private/Characters/AshenOathPlayerCharacter.cpp)。
 
 ## 入口与运行链
 
@@ -25,7 +25,13 @@ DodgeAction (Boolean / Started)
   → 当前玩家 Character.RequestDodge
   → 选择前/后翻 AbilitySpec，并把二维意图冻结为世界方向
   → Dodge GameplayAbility
-  → 移动 AbilityTask / CharacterMovement
+  → Travel 位移 Task / CharacterMovement
+  → 锁定时的 Recovery 朝向 Task
+
+HealAction (Boolean / Started)
+  → PlayerController.HandleHeal
+  → 当前玩家 Character.RequestHeal
+  → Heal GameplayAbility（执行期间锁定移动）
 ```
 
 Controller 的 Move/Look 回调先检查本地控制、对应输入未被忽略及当前 Pawn 有效。每次调用读取当前 Pawn，不长期缓存之前控制的身体。
@@ -36,7 +42,7 @@ Controller 的 Move/Look 回调先检查本地控制、对应输入未被忽略�
 
 | 生命周期入口 | 项目中的处理 |
 |---|---|
-| `SetupInputComponent` | 验证 Enhanced Input 组件及 Context；分别校验并绑定 Move/Look/LightAttack/Dodge，缺少单个动作不会禁用其他输入；按 InputComponent 去重绑定并检查映射 |
+| `SetupInputComponent` | 验证 Enhanced Input 组件及 Context；分别校验并绑定 Move/Look/ComboAttack/HeavyAttack/Heal/Dodge/LockOn，缺少单个动作不会禁用其他输入；按 InputComponent 去重绑定并检查映射 |
 | `OnPossess` | 父类建立控制关系后检查映射；本地玩家使用 GameOnly 输入模式并隐藏光标 |
 | `OnUnPossess` / `EndPlay` | 清理本 Controller 注册的映射 |
 
@@ -54,7 +60,9 @@ Move 的 Completed/Canceled 会把最近意图清零；UnPossess 也会清零，
 
 `RequestMove` 接收 `X = 右、Y = 前` 的二维移动意图和参考 Yaw，将意图转换为世界水平方向后交给 CharacterMovement。无 Controller、正在销毁，或带 `State.Dead` / `State.MovementLocked` 的角色拒绝新移动请求。
 
-轻击 Ability 激活期间持有 `State.MovementLocked`。角色在该状态首次加入时立即清除待处理移动输入和现有速度，因此身体保持攻击开始时的朝向；自由镜头仍可通过 Look 输入旋转。Ability 正常结束、取消或中断时由 GAS 自动移除该状态。
+攻击、闪避和治疗 Ability 激活期间持有 `State.MovementLocked`。角色在该状态首次加入时立即清除待处理移动输入和现有速度，并暂停自由移动或锁定系统对身体朝向的驱动。攻击和原地治疗保持动作开始时的朝向；前/侧闪避在整个 Travel 期间对齐位移方向，再在位移结束后通过独立时长的 Recovery 平滑恢复锁定目标朝向；后撤闪避保持原朝向。Ability 正常结束、取消或中断时由 GAS 自动移除该状态。
+
+锁定时，纯侧向输入（`X != 0`、归一化后的 `Y` 近零）以角色到目标的水平连线为前向，从左右切线向目标内偏 `LockedSideDodgeInwardAngle`。该角度由前闪 ActionData 配置，字段默认 `15°`，当前 `DA_Player_Dodge_Fwd` 配置为 `36°`，范围 `0–45°`。方向在请求时计算并由 Ability 冻结；目标移动和镜头平滑不会使 Travel 轨迹弯曲。水平位置重合时回退到原视角方向。自由闪避、前后输入及斜向组合输入仍沿原规则处理。该偏角只保证起步向内，不保证任意初始距离和翻滚长度下的落点都更接近目标。
 
 | 旋转对象 | 当前原生配置 | 作用 |
 |---|---|---|

@@ -34,17 +34,23 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> StaminaText;
 
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> HealUsesText;
+
 private:
 	void HandleAttributeChanged(const FOnAttributeChangeData& ChangeData);
 
 	void RefreshHealth();
 
 	void RefreshStamina();
+	void RefreshHealUses();
+	void HandleHealUsesChanged(int32 NewRemainingUses);
 
 	void UnbindAttributes();
 
 	// The widget observes the ASC without owning it; the player may disappear first.
 	TWeakObjectPtr<UAbilitySystemComponent> ObservedAbilitySystem;
+	TWeakObjectPtr<AAshenOathPlayerCharacter> ObservedPlayer;
 
 	FDelegateHandle HealthChangedHandle;
 
@@ -53,4 +59,5 @@ private:
 	FDelegateHandle StaminaChangedHandle;
 
 	FDelegateHandle MaxStaminaChangedHandle;
+	FDelegateHandle HealUsesChangedHandle;
 };

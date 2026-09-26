@@ -1,17 +1,14 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "AbilitySystem/Ability/AshenOathCombatAbility.h"
-#include "Actions/CombatMeleeTypes.h"
+#include "AbilitySystem/Ability/AshenOathMeleeAttackAbility.h"
 #include "AshenOathBossSingleSwingAbility.generated.h"
 
-class UAbilityTask_PlayMontageAndWait;
-class UCombatActionData;
-class UCombatMeleeComponent;
+class UAshenOathMeleeActionData;
 
-/** Owns one Boss single-swing animation and melee-detection lifecycle. */
+/** Boss single-swing activation; the melee base owns execution and cleanup. */
 UCLASS()
-class ASHENOATH_API UAshenOathBossSingleSwingAbility : public UAshenOathCombatAbility
+class ASHENOATH_API UAshenOathBossSingleSwingAbility : public UAshenOathMeleeAttackAbility
 {
 	GENERATED_BODY()
 
@@ -34,35 +31,6 @@ protected:
 		const FGameplayEventData* TriggerEventData
 	) override;
 
-	virtual void EndAbility(
-		FGameplayAbilitySpecHandle Handle,
-		const FGameplayAbilityActorInfo* ActorInfo,
-		FGameplayAbilityActivationInfo ActivationInfo,
-		bool bReplicateEndAbility,
-		bool bWasCancelled
-	) override;
-
 private:
-	bool IsActionDataReady(
-		const UCombatActionData* ActionData,
-		const FGameplayAbilityActorInfo* ActorInfo
-	) const;
-
-	UCombatMeleeComponent* ResolveMeleeComponent(
-		const FGameplayAbilityActorInfo* ActorInfo
-	) const;
-
-	UFUNCTION()
-	void HandleMontageCompleted();
-
-	UFUNCTION()
-	void HandleMontageInterrupted();
-
-	void FinishAbility(bool bWasCancelled);
-
-	UPROPERTY(Transient)
-	TObjectPtr<UAbilityTask_PlayMontageAndWait> MontageTask;
-
-	TWeakObjectPtr<UCombatMeleeComponent> ActiveMeleeComponent;
-	FCombatMeleeSessionHandle ActiveMeleeSession;
+	bool IsActionDataReady(const UAshenOathMeleeActionData* ActionData) const;
 };

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameplayTagContainer.h"
 #include "CombatDamageTypes.generated.h"
 
 class AActor;
@@ -43,4 +44,12 @@ struct ASHENOATHCOMBAT_API FCombatDamageAttempt
 	// perfect dodge. The target still owns timing and one-shot consumption.
 	UPROPERTY(BlueprintReadWrite, Category = "Combat Damage")
 	bool bCanTriggerPerfectDodge = false;
+
+	// Optional per-execution SetByCaller value, applied only when its tag is valid.
+	// The Effect decides which attribute consumes this value.
+	UPROPERTY(BlueprintReadWrite, Category = "Combat Damage")
+	FGameplayTag SetByCallerMagnitudeTag;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Combat Damage")
+	float SetByCallerMagnitude = 0.0f;
 };

@@ -1,7 +1,6 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "AbilitySystem/AshenOathAttributeSet.h"
-#include "AbilitySystem/AshenOathStaminaRegenerationEffect.h"
 #include "AbilitySystemComponent.h"
 #include "Characters/AshenOathBossCharacter.h"
 #include "Characters/AshenOathPlayerCharacter.h"
@@ -11,6 +10,7 @@
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "Game/AshenOathGameMode.h"
+#include "GameplayEffect.h"
 #include "GameplayTags/AshenOathGameplayTags.h"
 #include "Misc/AutomationTest.h"
 #include "Player/AshenOathPlayerController.h"
@@ -188,7 +188,7 @@ bool FAshenOathDeathLifecycleTest::RunTest(const FString& Parameters)
 
 	FCombatDamageAttempt DamageAttempt;
 	DamageAttempt.SourceActor = Boss;
-	DamageAttempt.DamageEffect = UAshenOathStaminaRegenerationEffect::StaticClass();
+	DamageAttempt.DamageEffect = UGameplayEffect::StaticClass();
 	DamageAttempt.HitTimeSeconds = World->GetTimeSeconds();
 	TestEqual(
 		TEXT("Terminal actors reject further damage"),

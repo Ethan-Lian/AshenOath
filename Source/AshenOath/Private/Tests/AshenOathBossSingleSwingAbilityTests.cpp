@@ -3,7 +3,8 @@
 #include "Characters/AshenOathBossCharacter.h"
 
 #include "AbilitySystemComponent.h"
-#include "Actions/CombatActionData.h"
+#include "AbilitySystem/Data/AshenOathMeleeActionData.h"
+#include "AbilitySystem/Data/AshenOathBossDashSwingActionData.h"
 #include "Actions/CombatMeleeComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -53,14 +54,28 @@ bool FAshenOathBossSingleSwingAbilityLifecycleTest::RunTest(const FString& Param
 		return false;
 	}
 
-	UCombatActionData* TestActionData = NewObject<UCombatActionData>(Boss);
+	const UAshenOathBossDashSwingActionData* DashAction =
+		LoadObject<UAshenOathBossDashSwingActionData>(
+			nullptr,
+			TEXT("/Game/AshenOath/CombatData/Boss/DA_Boss_DashSwing.DA_Boss_DashSwing")
+		);
+	TestNotNull(TEXT("Boss DashSwing ActionData loads"), DashAction);
+	if (DashAction)
+	{
+		TestTrue(TEXT("DashSwing stops at a reachable swing distance"),
+			DashAction->StopDistance > 0.0f && DashAction->StopDistance <= 300.0f);
+		TestTrue(TEXT("DashSwing increases movement speed"),
+			DashAction->DashSpeedMultiplier > 1.0f);
+	}
+
+	UAshenOathMeleeActionData* TestActionData = NewObject<UAshenOathMeleeActionData>(Boss);
 	TestActionData->Montage = LoadObject<UAnimMontage>(
 		nullptr,
 		TEXT("/Game/ParagonSevarog/Characters/Heroes/Sevarog/Animations/Swing1_Medium_Montage.Swing1_Medium_Montage")
 	);
 	TestActionData->DamageEffect = LoadClass<UGameplayEffect>(
 		nullptr,
-		TEXT("/Game/AshenOath/AbilitySystem/Effects/Player/GE_Player_Light01_Damage.GE_Player_Light01_Damage_C")
+		TEXT("/Game/AshenOath/AbilitySystem/Effects/Boss/GE_Boss_SingleSwing_Damage.GE_Boss_SingleSwing_Damage_C")
 	);
 	TestActionData->MeleeTraceRadius = 20.0f;
 
@@ -104,8 +119,8 @@ bool FAshenOathBossSingleSwingAbilityLifecycleTest::RunTest(const FString& Param
 	}
 
 	TestNotNull(TEXT("Boss grants the configured single-swing Ability"), SingleSwingSpec);
-	const UCombatActionData* ActionData = SingleSwingSpec
-		? Cast<UCombatActionData>(SingleSwingSpec->SourceObject.Get())
+	const UAshenOathMeleeActionData* ActionData = SingleSwingSpec
+		? Cast<UAshenOathMeleeActionData>(SingleSwingSpec->SourceObject.Get())
 		: nullptr;
 	TestNotNull(TEXT("Single-swing Spec keeps ActionData as its source"), ActionData);
 
@@ -163,6 +178,90 @@ bool FAshenOathBossSingleSwingAbilityLifecycleTest::RunTest(const FString& Param
 		Melee->HasActiveSession());
 	TestFalse(TEXT("Cancellation closes the Boss hit window"),
 		Melee->HasActiveHitWindow());
+
+	int32 RequestEndCount = 0;
+	FAshenOathBossAttackRequestHandle EndedRequest;
+	bool bLastRequestWasCancelled = false;
+	const FDelegateHandle RequestEndHandle = Boss->OnBossAttackEnded().AddLambda(
+		[&RequestEndCount, &EndedRequest, &bLastRequestWasCancelled](
+			FAshenOathBossAttackRequestHandle Request, bool bWasCancelled)
+		{
+			++RequestEndCount;
+			EndedRequest = Request;
+			bLastRequestWasCancelled = bWasCancelled;
+		}
+	);
+
+	const FAshenOathBossAttackStartResult FirstRequest =
+		Boss->RequestFirstPhaseAttack(150.0f, 225.0f);
+	TestEqual(TEXT("The first-phase request runs the available swing"),
+		FirstRequest.State, EAshenOathBossAttackStartState::Running);
+	TestTrue(TEXT("A running request has an identity"),
+		FirstRequest.RequestHandle.IsValid());
+	TestFalse(TEXT("A different request cannot cancel the active swing"),
+		Boss->CancelBossAttack({FirstRequest.RequestHandle.Value + 1}));
+	TestTrue(TEXT("The unmatched cancellation leaves the swing active"),
+		SingleSwingSpec->IsActive());
+	TestTrue(TEXT("The owner can cancel its request"),
+		Boss->CancelBossAttack(FirstRequest.RequestHandle));
+	TestEqual(TEXT("The owned request ends exactly once"), RequestEndCount, 1);
+	TestTrue(TEXT("The end notification identifies the first request"),
+		EndedRequest == FirstRequest.RequestHandle);
+	TestTrue(TEXT("Explicit cancellation reports failure to the task"),
+		bLastRequestWasCancelled);
+
+	const FAshenOathBossAttackStartResult SecondRequest =
+		Boss->RequestBossAttack(EAshenOathBossAttackType::SingleSwing);
+	TestEqual(TEXT("The next swing receives a new running request"),
+		SecondRequest.State, EAshenOathBossAttackStartState::Running);
+	TestFalse(TEXT("An expired request cannot cancel the next swing"),
+		Boss->CancelBossAttack(FirstRequest.RequestHandle));
+	TestTrue(TEXT("The next swing remains active"), SingleSwingSpec->IsActive());
+	Boss->CancelBossAttack(SecondRequest.RequestHandle);
+	TestEqual(TEXT("Each owned request emits one completion"), RequestEndCount, 2);
+	Boss->OnBossAttackEnded().Remove(RequestEndHandle);
+
+	TestTrue(TEXT("A missed dash roll produces an approach decision at any distance"),
+		Boss->ChooseFirstPhaseCombatIntent(900.0f, 300.0f, 500.0f, 0.0f));
+	TestEqual(TEXT("The missed dash roll selects normal approach"),
+		Boss->GetPendingCombatIntent(), EAshenOathBossCombatIntent::Approach);
+	float ApproachRange = 0.0f;
+	TestTrue(TEXT("The approach decision can be consumed once"),
+		Boss->TryConsumeApproachDecision(ApproachRange));
+	TestEqual(TEXT("The distant approach ends at melee range"),
+		ApproachRange, 300.0f);
+	TestFalse(TEXT("The same approach decision cannot be consumed again"),
+		Boss->TryConsumeApproachDecision(ApproachRange));
+
+	TestTrue(TEXT("A target at the dash threshold produces an approach decision"),
+		Boss->ChooseFirstPhaseCombatIntent(500.0f, 300.0f, 500.0f, 1.0f));
+	TestTrue(TEXT("The threshold decision approaches melee range"),
+		Boss->TryConsumeApproachDecision(ApproachRange));
+	TestEqual(TEXT("The melee approach uses the configured range"),
+		ApproachRange, 300.0f);
+
+	TestTrue(TEXT("An eligible dash has no maximum start range"),
+		Boss->ChooseFirstPhaseCombatIntent(900.0f, 300.0f, 500.0f, 1.0f));
+	TestEqual(TEXT("The dash opportunity becomes an attack intent"),
+		Boss->GetPendingCombatIntent(), EAshenOathBossCombatIntent::Attack);
+	TestEqual(TEXT("A rejected dash returns to a melee approach"),
+		Boss->RequestSelectedCombatAttack().State, EAshenOathBossAttackStartState::Rejected);
+	TestTrue(TEXT("A rejected dash sets a safe approach fallback"),
+		Boss->TryConsumeApproachDecision(ApproachRange));
+	TestEqual(TEXT("The dash fallback approaches melee range"),
+		ApproachRange, 300.0f);
+	TestTrue(TEXT("A nearby target produces a combat decision"),
+		Boss->ChooseFirstPhaseCombatIntent(150.0f, 300.0f, 500.0f, 1.0f));
+	TestEqual(TEXT("A nearby target selects a melee attack"),
+		Boss->GetPendingCombatIntent(), EAshenOathBossCombatIntent::Attack);
+
+	TestActionData->StartSection = TEXT("MissingSection");
+	TestFalse(TEXT("An invalid Boss start section rejects activation"),
+		Boss->RequestSingleSwing());
+	TestEqual(TEXT("A rejected swing emits no completion"),
+		EndNotificationCount, 1);
+	TestFalse(TEXT("A rejected swing creates no melee session"),
+		Melee->HasActiveSession());
 
 	Boss->OnSingleSwingEnded().Remove(EndNotificationHandle);
 

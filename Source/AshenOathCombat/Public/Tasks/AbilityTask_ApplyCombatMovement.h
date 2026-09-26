@@ -9,6 +9,7 @@ class UAnimInstance;
 class UCharacterMovementComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FCombatMovementTaskFailed);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FCombatMovementTaskCompleted);
 
 /**
  * Applies one collision-aware, code-driven displacement for an Ability.
@@ -26,6 +27,11 @@ public:
 
 	UPROPERTY(BlueprintAssignable)
 	FCombatMovementTaskFailed OnFailed;
+
+	// Fires after code movement releases CharacterMovement control. The task
+	// continues owning the root-motion override until the Ability ends.
+	UPROPERTY(BlueprintAssignable)
+	FCombatMovementTaskCompleted OnCompleted;
 
 	// Applies world-space displacement over an action-relative interval.
 	// ExecutionStartWorldTime must use the owning UWorld clock.

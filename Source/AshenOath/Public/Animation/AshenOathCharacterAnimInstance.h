@@ -1,10 +1,11 @@
 ﻿#pragma once
+
 #include "CoreMinimal.h"
 #include "Animation/AnimInstance.h"
 #include "AshenOathCharacterAnimInstance.generated.h"
 
-
 class UCharacterMovementComponent;
+class UCombatTargetingComponent;
 
 UCLASS()
 class ASHENOATH_API UAshenOathCharacterAnimInstance : public UAnimInstance
@@ -13,8 +14,9 @@ class ASHENOATH_API UAshenOathCharacterAnimInstance : public UAnimInstance
 	
 public:
 	virtual void NativeInitializeAnimation() override;
-    virtual void NativeUpdateAnimation(float DeltaSeconds) override;
-    virtual void NativeUninitializeAnimation() override;
+	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
+	virtual void NativeUninitializeAnimation() override;
+
 protected:
 	// Horizontal speed in cm/s.
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "AshenOath|Animation|Locomotion")
@@ -30,6 +32,10 @@ protected:
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "AshenOath|Animation|Locomotion")
 	bool bIsInAir = false;
 
+	// Presentation-only mirror used to select free or locked locomotion graphs.
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "AshenOath|Animation|Locomotion")
+	bool bIsLockedOn = false;
+
 private:
 	void RefreshOwnerReferences();
 	void ResetLocomotionData();
@@ -37,4 +43,6 @@ private:
 	TWeakObjectPtr<ACharacter> CachedCharacter;
 
 	TWeakObjectPtr<UCharacterMovementComponent> CachedMovementComponent;
+
+	TWeakObjectPtr<UCombatTargetingComponent> CachedTargetingComponent;
 };

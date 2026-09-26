@@ -3,7 +3,7 @@
 #include "AbilitySystem/AshenOathStaminaRecoveryComponent.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
-#include "Actions/CombatActionData.h"
+#include "AbilitySystem/Data/AshenOathActionData.h"
 #include "ActiveGameplayEffectHandle.h"
 #include "GameplayEffect.h"
 #include "GameplayTags/AshenOathGameplayTags.h"
@@ -28,7 +28,7 @@ bool UAshenOathCombatAbility::CheckCost(
 	const FGameplayAbilityActorInfo* ActorInfo,
 	FGameplayTagContainer* OptionalRelevantTags) const
 {
-	const UCombatActionData* ActionData = ResolveActionData(Handle, ActorInfo);
+	const UAshenOathActionData* ActionData = ResolveActionData(Handle, ActorInfo);
 	if (!ActionData)
 	{
 		return false;
@@ -76,7 +76,7 @@ void UAshenOathCombatAbility::ApplyCost(
 	const FGameplayAbilityActivationInfo ActivationInfo) const
 {
 	bCostApplicationSucceeded = false;
-	const UCombatActionData* ActionData = ResolveActionData(Handle, ActorInfo);
+	const UAshenOathActionData* ActionData = ResolveActionData(Handle, ActorInfo);
 
 	if (!ActionData)
 	{
@@ -143,11 +143,11 @@ void UAshenOathCombatAbility::ApplyCost(
 	}
 }
 
-const UCombatActionData* UAshenOathCombatAbility::ResolveActionData(
+const UAshenOathActionData* UAshenOathCombatAbility::ResolveActionData(
 	const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo) const
 {
-	return Cast<UCombatActionData>(GetSourceObject(Handle, ActorInfo));
+	return Cast<UAshenOathActionData>(GetSourceObject(Handle, ActorInfo));
 }
 
 void UAshenOathCombatAbility::ResetCostApplicationResult()
