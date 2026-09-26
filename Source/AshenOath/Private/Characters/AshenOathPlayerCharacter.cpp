@@ -1,9 +1,9 @@
 #include "Characters/AshenOathPlayerCharacter.h"
 #include "AbilitySystem/AshenOathAttributeSet.h"
-#include "AbilitySystem/AshenOathStaminaRegenerationEffect.h"
 #include "AbilitySystem/AshenOathStaminaRecoveryComponent.h"
 #include "AbilitySystem/Data/AshenOathHeavyAttackData.h"
 #include "AbilitySystem/Data/AshenOathComboAttackData.h"
+#include "AbilitySystem/Data/AshenOathHealActionData.h"
 #include "AbilitySystemComponent.h"
 #include "GameplayEffect.h"
 #include "Camera/CameraComponent.h"
@@ -18,6 +18,7 @@
 #include "AbilitySystem/Ability/AshenOathDodgeAbility.h"
 #include "AbilitySystem/Ability/AshenOathComboAttackAbility.h"
 #include "AbilitySystem/Ability/AshenOathHeavyAttackAbility.h"
+#include "AbilitySystem/Ability/AshenOathHealAbility.h"
 #include "Reaction/CombatHitReactionComponent.h"
 #include "Death/CombatDeathComponent.h"
 #include "GameplayAbilitySpec.h"
@@ -80,9 +81,9 @@ AAshenOathPlayerCharacter::AAshenOathPlayerCharacter()
 
 	AttributeSet = CreateDefaultSubobject<UAshenOathAttributeSet>(TEXT("AttributeSet"));
 
-	StaminaRecoveryEffect = UAshenOathStaminaRegenerationEffect::StaticClass();
 	ComboAttackAbilityClass = UAshenOathComboAttackAbility::StaticClass();
 	HeavyAttackAbilityClass = UAshenOathHeavyAttackAbility::StaticClass();
+	HealAbilityClass = UAshenOathHealAbility::StaticClass();
 	DodgeAbilityClass = UAshenOathDodgeAbility::StaticClass();
 }
 
@@ -165,6 +166,10 @@ void AAshenOathPlayerCharacter::PossessedBy(AController* NewController)
 void AAshenOathPlayerCharacter::UnPossessed()
 {
 	RequestClearLockOn();
+	if (AbilitySystemComponent && HealAbilitySpecHandle.IsValid())
+	{
+		AbilitySystemComponent->CancelAbilityHandle(HealAbilitySpecHandle);
+	}
 	Super::UnPossessed();
 }
 
@@ -220,6 +225,7 @@ void AAshenOathPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason
 
 	ComboAttackAbilitySpecHandle = FGameplayAbilitySpecHandle();
 	HeavyAttackAbilitySpecHandle = FGameplayAbilitySpecHandle();
+	HealAbilitySpecHandle = FGameplayAbilitySpecHandle();
 	ForwardDodgeAbilitySpecHandle = FGameplayAbilitySpecHandle();
 	BackwardDodgeAbilitySpecHandle = FGameplayAbilitySpecHandle();
 
@@ -373,6 +379,57 @@ bool AAshenOathPlayerCharacter::RequestHeavyAttackReleased()
 	return HeavyAttackAbility && HeavyAttackAbility->HandleInputReleased();
 }
 
+bool AAshenOathPlayerCharacter::RequestHeal()
+{
+	return CanStartHeal() && HealAbilitySpecHandle.IsValid() &&
+		AbilitySystemComponent->TryActivateAbility(HealAbilitySpecHandle);
+}
+
+bool AAshenOathPlayerCharacter::CanStartHeal() const
+{
+	if (!GetController() || IsActorBeingDestroyed() ||
+		!AbilitySystemComponent || RemainingHealUses <= 0 || bHealUseReserved)
+	{
+		return false;
+	}
+
+	const float Health = AbilitySystemComponent->GetNumericAttribute(
+		UAshenOathAttributeSet::GetHealthAttribute());
+	const float MaxHealth = AbilitySystemComponent->GetNumericAttribute(
+		UAshenOathAttributeSet::GetMaxHealthAttribute());
+	return Health > 0.0f && Health < MaxHealth;
+}
+
+bool AAshenOathPlayerCharacter::TryReserveHealUse()
+{
+	if (!CanStartHeal())
+	{
+		return false;
+	}
+
+	bHealUseReserved = true;
+
+	return true;
+}
+
+void AAshenOathPlayerCharacter::ResolveHealUseReservation(const bool bEffectApplied)
+{
+	if (!bHealUseReserved)
+	{
+		return;
+	}
+
+	bHealUseReserved = false;
+
+	if (!bEffectApplied)
+	{
+		return;
+	}
+
+	--RemainingHealUses;
+	HealUsesChangedEvent.Broadcast(RemainingHealUses);
+}
+
 bool AAshenOathPlayerCharacter::RequestDodge(const FVector2D& MovementIntent)
 {
 	if (!GetController() || IsActorBeingDestroyed() || !AbilitySystemComponent)
@@ -406,10 +463,13 @@ bool AAshenOathPlayerCharacter::RequestDodge(const FVector2D& MovementIntent)
 	const FGameplayAbilitySpecHandle DodgeAbilityHandle = bWantsBackwardDodge
 		? BackwardDodgeAbilitySpecHandle
 		: ForwardDodgeAbilitySpecHandle;
+	const UAshenOathDodgeActionData* DodgeAction = bWantsBackwardDodge
+		? BackwardDodgeAction
+		: ForwardDodgeAction;
 	const EAshenOathDodgeFacingMode FacingMode = bWantsBackwardDodge
 		? EAshenOathDodgeFacingMode::PreserveCurrentFacing
 		: EAshenOathDodgeFacingMode::FaceMovementDirection;
-	const FVector DodgeDirection = CalculateDodgeDirection(DodgeIntent);
+	const FVector DodgeDirection = CalculateDodgeDirection(DodgeIntent, DodgeAction);
 
 	FGameplayAbilitySpec* DodgeSpec =
 		AbilitySystemComponent->FindAbilitySpecFromHandle(DodgeAbilityHandle);
@@ -424,7 +484,8 @@ bool AAshenOathPlayerCharacter::RequestDodge(const FVector2D& MovementIntent)
 }
 
 FVector AAshenOathPlayerCharacter::CalculateDodgeDirection(
-	const FVector2D& DodgeIntent) const
+	const FVector2D& DodgeIntent,
+	const UAshenOathDodgeActionData* DodgeAction) const
 {
 	FVector DodgeDirection = GetActorForwardVector();
 
@@ -441,7 +502,8 @@ FVector AAshenOathPlayerCharacter::CalculateDodgeDirection(
 		const AActor* LockTarget = CombatTargetingComponent
 			? CombatTargetingComponent->GetTarget()
 			: nullptr;
-		if (IsValid(LockTarget) && FMath::IsNearlyZero(DodgeIntent.Y))
+		if (IsValid(LockTarget) && DodgeAction &&
+			FMath::IsNearlyZero(DodgeIntent.Y))
 		{
 			const FVector ToTarget = (
 				LockTarget->GetActorLocation() - GetActorLocation()
@@ -451,7 +513,7 @@ FVector AAshenOathPlayerCharacter::CalculateDodgeDirection(
 				// Use the target bearing, not the lagging camera or travel-facing body.
 				const FVector TargetRight = FVector::CrossProduct(FVector::UpVector, ToTarget);
 				const float InwardAngle = FMath::DegreesToRadians(
-					FMath::Clamp(LockedSideDodgeInwardAngle, 0.0f, 45.0f)
+					FMath::Clamp(DodgeAction->LockedSideDodgeInwardAngle, 0.0f, 45.0f)
 				);
 				DodgeDirection = TargetRight * FMath::Sign(DodgeIntent.X) * FMath::Cos(InwardAngle)
 					+ ToTarget * FMath::Sin(InwardAngle);
@@ -648,6 +710,11 @@ void AAshenOathPlayerCharacter::GrantConfiguredAbilities()
 		HeavyAttackAbilityClass,
 		HeavyAttackAction,
 		HeavyAttackAbilitySpecHandle
+	);
+	GrantAbilityIfNeeded(
+		HealAbilityClass,
+		HealAction,
+		HealAbilitySpecHandle
 	);
 	GrantAbilityIfNeeded(
 		DodgeAbilityClass,

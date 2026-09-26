@@ -33,9 +33,10 @@ public:
 	);
 
 	virtual void Activate() override;
-	virtual void TickTask(float DeltaTime) override;
-	virtual void OnDestroy(bool bInOwnerFinished) override;
 
+	virtual void TickTask(float DeltaTime) override;
+
+	virtual void OnDestroy(bool bInOwnerFinished) override;
 private:
 	void FinishChase(bool bReached);
 	void ReleaseMovement();
@@ -43,11 +44,14 @@ private:
 	TWeakObjectPtr<AActor> Target;
 	TWeakObjectPtr<ACharacter> Character;
 	TWeakObjectPtr<UCharacterMovementComponent> MovementComponent;
+
 	FVector ProgressCheckLocation = FVector::ZeroVector;
+
 	float StopDistance = 0.0f;
 	float SpeedMultiplier = 1.0f;
 	float SavedMaxWalkSpeed = 0.0f;
 	float ProgressCheckElapsed = 0.0f;
+
 	bool bOwnsSpeedOverride = false;
 	bool bChaseFinished = false;
 };

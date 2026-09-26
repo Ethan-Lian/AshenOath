@@ -11,8 +11,6 @@ class ASHENOATH_API UAshenOathHeavyAttackData : public UAshenOathMeleeActionData
 	GENERATED_BODY()
 
 public:
-	UAshenOathHeavyAttackData();
-
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Heavy Attack|Charge",
 		meta = (ClampMin = "0.01", Units = "s"))
 	float MaxChargeDurationSeconds = 5.0f;

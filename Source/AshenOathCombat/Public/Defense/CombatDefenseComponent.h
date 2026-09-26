@@ -88,6 +88,7 @@ private:
 	double WindowEndWorldTime = 0.0;
 	double PerfectDodgeWindowStartWorldTime = 0.0;
 	double PerfectDodgeWindowEndWorldTime = 0.0;
+
 	bool bPerfectDodgeConsumed = false;
 
 	int32 NextWindowId = 1;

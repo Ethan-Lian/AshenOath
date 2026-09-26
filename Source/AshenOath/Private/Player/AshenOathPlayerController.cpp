@@ -128,6 +128,14 @@ void AAshenOathPlayerController::SetupInputComponent()
 			);
 		}
 
+		if (HealAction && HealAction->ValueType == EInputActionValueType::Boolean)
+		{
+			EnhancedInput->BindAction(
+				HealAction, ETriggerEvent::Started,
+				this, &AAshenOathPlayerController::HandleHeal
+			);
+		}
+
 		if (LockOnAction && LockOnAction->ValueType == EInputActionValueType::Boolean)
 		{
 			EnhancedInput->BindAction(
@@ -339,6 +347,20 @@ void AAshenOathPlayerController::HandleHeavyAttackReleased()
 		Cast<AAshenOathPlayerCharacter>(GetPawn()))
 	{
 		PlayerCharacter->RequestHeavyAttackReleased();
+	}
+}
+
+void AAshenOathPlayerController::HandleHeal()
+{
+	if (!bGameplayInputEnabled || !IsLocalController())
+	{
+		return;
+	}
+
+	if (AAshenOathPlayerCharacter* PlayerCharacter =
+		Cast<AAshenOathPlayerCharacter>(GetPawn()))
+	{
+		PlayerCharacter->RequestHeal();
 	}
 }
 

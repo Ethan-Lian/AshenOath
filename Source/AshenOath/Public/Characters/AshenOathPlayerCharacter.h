@@ -22,11 +22,15 @@ class UAshenOathComboAttackAbility;
 class UAshenOathComboAttackData;
 class UAshenOathHeavyAttackAbility;
 class UAshenOathHeavyAttackData;
+class UAshenOathHealAbility;
+class UAshenOathHealActionData;
 class UAshenOathDodgeAbility;
 class UAshenOathStaminaRecoveryComponent;
 class UCombatHitReactionComponent;
 class UCombatDeathComponent;
 class UCombatTargetingComponent;
+
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnAshenOathHealUsesChanged, int32);
 
 /**
  * Player-side GAS host, movement and combat actions.
@@ -55,6 +59,12 @@ public:
 	bool RequestHeavyAttackPressed();
 	bool RequestHeavyAttackReleased();
 
+	// Requests one interruptible Cast. The accepted request does not spend a use.
+	bool RequestHeal();
+	bool CanStartHeal() const;
+	int32 GetRemainingHealUses() const { return RemainingHealUses; }
+	FOnAshenOathHealUsesChanged& OnHealUsesChanged() { return HealUsesChangedEvent; }
+
 	// Selects the forward/backward AbilitySpec and freezes a world-space direction.
 	// True means GAS accepted the activation request; completion remains asynchronous.
 	bool RequestDodge(const FVector2D& MovementIntent);
@@ -78,6 +88,8 @@ protected:
 	virtual void UnPossessed() override;
 
 private:
+	friend class UAshenOathHealAbility;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AshenOath|AbilitySystem",
 		meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
@@ -132,16 +144,22 @@ private:
 
 	FGameplayAbilitySpecHandle HeavyAttackAbilitySpecHandle;
 
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Heal")
+	TObjectPtr<UAshenOathHealActionData> HealAction;
+
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Abilities")
+	TSubclassOf<UAshenOathHealAbility> HealAbilityClass;
+
+	FGameplayAbilitySpecHandle HealAbilitySpecHandle;
+	int32 RemainingHealUses = 3;
+	bool bHealUseReserved = false;
+	FOnAshenOathHealUsesChanged HealUsesChangedEvent;
+
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Dodge")
 	TObjectPtr<UAshenOathDodgeActionData> ForwardDodgeAction;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Dodge")
 	TObjectPtr<UAshenOathDodgeActionData> BackwardDodgeAction;
-
-	// Biases locked lateral dodges toward the target; sampled only at activation.
-	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Dodge",
-		meta = (ClampMin = "0.0", ClampMax = "45.0", Units = "deg"))
-	float LockedSideDodgeInwardAngle = 15.0f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Abilities")
 	TSubclassOf<UAshenOathDodgeAbility> DodgeAbilityClass;
@@ -189,7 +207,9 @@ private:
 	void HandleLockTargetChanged(AActor* PreviousTarget, AActor* NewTarget);
 	void UpdateLockedView(float DeltaSeconds);
 	void RefreshFacingMode();
-	FVector CalculateDodgeDirection(const FVector2D& DodgeIntent) const;
+	FVector CalculateDodgeDirection(
+		const FVector2D& DodgeIntent,
+		const UAshenOathDodgeActionData* DodgeAction) const;
 
 	void GrantConfiguredAbilities();
 	void GrantAbilityIfNeeded(
@@ -199,4 +219,6 @@ private:
 	);
 
 	void CancelCombatAbilities();
+	bool TryReserveHealUse();
+	void ResolveHealUseReservation(bool bEffectApplied);
 };

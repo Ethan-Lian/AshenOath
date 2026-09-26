@@ -55,6 +55,9 @@ private:
 	TObjectPtr<UInputAction> HeavyAttackAction;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Input")
+	TObjectPtr<UInputAction> HealAction;
+
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Input")
 	TObjectPtr<UInputAction> DodgeAction;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Input")
@@ -81,6 +84,7 @@ private:
 	void HandleComboAttack();
 	void HandleHeavyAttackPressed();
 	void HandleHeavyAttackReleased();
+	void HandleHeal();
 	void HandleDodge();
 	void HandleToggleLockOn();
 

@@ -3,13 +3,13 @@
 #include "Characters/AshenOathBossCharacter.h"
 #include "Characters/AshenOathPlayerCharacter.h"
 
-#include "AbilitySystem/AshenOathStaminaRegenerationEffect.h"
 #include "AbilitySystemComponent.h"
 #include "Damage/CombatDamageComponent.h"
 #include "Defense/CombatDefenseComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
+#include "GameplayEffect.h"
 #include "GameplayTags/AshenOathGameplayTags.h"
 #include "Misc/AutomationTest.h"
 
@@ -118,7 +118,7 @@ bool FAshenOathPerfectDodgeDecisionTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("The defense window activates"), Defense->ActivateDodgeWindow(FirstWindow));
 
 	FCombatDamageAttempt Attempt;
-	Attempt.DamageEffect = UAshenOathStaminaRegenerationEffect::StaticClass();
+	Attempt.DamageEffect = UGameplayEffect::StaticClass();
 	Attempt.SourceActor = Source;
 	Attempt.bCanTriggerPerfectDodge = true;
 

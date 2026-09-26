@@ -21,6 +21,12 @@ namespace AshenOathGameplayTags
 	);
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		Ability_Action_Heal,
+		"Ability.Action.Heal",
+		"Identifies the player's interruptible healing ability."
+	);
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
 		Ability_Action_Dodge,
 		"Ability.Action.Dodge",
 		"Identifies a combat dodge ability."

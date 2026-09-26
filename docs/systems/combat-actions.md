@@ -1,6 +1,6 @@
 # 战斗动作与伤害
 
-当前实现由 GameplayAbility 驱动玩家轻击连招、蓄力重击、前/后闪避，以及 Boss 第一阶段的单次挥击、连击、蓄力重挥和突进后挥击，并已接入普通/完美闪避判定、基础受击与死亡清理。新增三招的资产配置和游戏内验证仍待完成。游戏模块的 `UAshenOathActionData` 只保存配置，不保存执行状态；旧 `UCombatActionComponent` 及其执行句柄已经删除。
+当前实现由 GameplayAbility 驱动玩家轻击连招、蓄力重击、前/后闪避和三次治疗，以及 Boss 第一阶段的单次挥击、连击、蓄力重挥和突进后挥击，并已接入普通/完美闪避判定、基础受击与死亡清理。游戏模块的 `UAshenOathActionData` 只保存配置，不保存执行状态；旧 `UCombatActionComponent` 及其执行句柄已经删除。
 
 ## 职责边界
 
@@ -11,6 +11,7 @@
 | `UAshenOathComboAttackAbility` | 直接承载轻击连招；拥有 Combo Window、重复输入消费和 Montage Section 推进 |
 | `UAshenOathHeavyAttackAbility` | 与 Combo 并列继承 MeleeAttack；拥有按下、蓄力消耗、释放、伤害倍率和自动瞄准 |
 | `UAshenOathDodgeAbility` | 拥有一次闪避的方向/朝向策略快照、Montage、Cost、Travel/Recovery Task、Defense 窗口和统一结束流程 |
+| `UAshenOathHealAbility` | 原地播放 Cast Montage，只接受所属实例的完成 Notify；成功应用 Heal Effect 后才消耗一次治疗次数 |
 | `UAshenOathBossSingleSwingAbility` | 校验单次挥击起始 Section 并启动近战执行；复用 MeleeAttack 的 Montage、Cost、会话和清理流程，不决定接近、恢复或下一招 |
 | `UAshenOathBossComboAbility` | 按 ActionData 的 Section 顺序自动衔接两至三段挥击；整套只建立一次 Melee 会话和一次 Cost |
 | `UAshenOathBossChargedSwingAbility` | 前摇进入循环，按配置时间释放重挥；开始时提交 Cost，释放时才建立 Melee 会话 |
@@ -31,6 +32,8 @@
 | `UAshenOathDodgeActionData` | 闪避位移、普通与完美窗口配置 |
 
 `AshenOath` 游戏模块拥有动作 DataAsset、角色与 Ability，并把配置转换为 Combat 调用参数；`AshenOathCombat` 只依赖引擎和 GAS 公共接口，不引用项目 DataAsset、玩家、Boss、项目 AttributeSet、原生 Tag 或 UI。
+
+治疗次数由玩家 Character 持有，初始为三次；新 Character 随重试关卡重新创建。Heal Ability 在整个执行期间持有 `State.MovementLocked`，由 Character 立即停止现有移动并拒绝新移动输入。所属 Montage 的完成 Notify 才能尝试预留一次使用、应用配置的 Instant Heal Effect，并在应用成功后扣除次数；重复或旧实例 Notify 被拒绝，Notify 前中断不回血、不扣次数。UI 只订阅 Health、Stamina 与剩余次数，不参与激活或扣费判断。正常结束、取消和死亡时 GAS 释放移动锁。
 
 ## 轻击启动事务
 
@@ -98,7 +101,7 @@ CombatDeath 由游戏模块注入生命属性和终止 Tag，初始化后监听 
 
 ## 恢复与清理
 
-玩家默认在最后一次成功消耗后等待 1 秒，由独立恢复组件启用无限期、0.1 秒周期的 GAS 恢复 Effect；默认每周期恢复 2 点耐力。轻击和闪避通过共享 Ability Cost 契约只在 Effect 成功应用后通知恢复组件。新一笔成功消耗会移除旧恢复 Effect 并重新计时；资源不足、播放失败和活动中重触发都不会打断已有恢复。
+玩家默认在最后一次成功消耗后等待 1 秒，由独立恢复组件启用蓝图配置的 `GE_Player_StaminaRecovery`：无限期、0.1 秒周期，每周期恢复 2 点耐力。轻击和闪避通过共享 Ability Cost 契约只在 Effect 成功应用后通知恢复组件。新一笔成功消耗会移除旧恢复 Effect 并重新计时；资源不足、播放失败和活动中重触发都不会打断已有恢复。
 
 轻击的所有出口汇入 `EndAbility`：先撤销 Ability 保存的会话句柄，再让 Melee 按稳定快照清理窗口与配置，最后由 GAS 结束 Task/停止 Montage。这样 Montage 停止过程中同步到达的 Notify 或 Task 回调只能看见已失效的会话。
 

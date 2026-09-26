@@ -28,7 +28,9 @@ PossessedBy(NewController)
   → 父类建立占有关系
   → InitAbilityActorInfo(this, this)
   → ApplyInitialAttributes()
-  → 按 SourceObject 授予轻击、前闪与后闪 AbilitySpec（重复占有不重复授予）
+  → 按 SourceObject 授予轻击、重击、治疗、前闪与后闪 AbilitySpec（重复占有不重复授予）
+UnPossessed
+  → 取消尚在执行的治疗 Ability
 EndPlay
   → 解除 DeathStarted 与 Tag 监听
   → 清理动作、窗口和恢复
@@ -36,6 +38,8 @@ EndPlay
 ```
 
 `PossessedBy` 刷新 ActorInfo 中的控制关系。同一实例重新被占有时，已成功应用的初始 Effect 不会重放。当前失去控制时没有专门刷新 ActorInfo，调用方不能依赖此期间缓存的 Controller 代表有效占有关系。
+
+玩家 Character 单独持有三次治疗使用次数和变更事件。Heal Ability 只在所属 Cast 完成 Notify 到达时预留一次使用、应用配置的 Instant GameplayEffect，并在成功后结算次数；HUD 只观察 Health 和次数。次数不属于 AttributeSet，重试重新加载关卡并创建新 Character 后恢复初始值。
 
 ### Boss
 
@@ -80,4 +84,4 @@ StateTree 关闭自动启动，由 Boss 显式控制顺序：初始属性、必�
 
 Health 的数值约束仍只属于 AttributeSet。`UCombatDeathComponent` 观察最终 Health 值并拥有一次性的存活→死亡转换：先添加注入的 `State.Dead`，再广播同步清理事件。该事件由具体角色消费，因为取消玩家恢复、停止 Boss StateTree、禁用移动和报告 GameMode 都属于游戏组装层，而不是通用属性或 Combat 模块职责。
 
-玩家耐力恢复使用一个无限期周期 Effect，每 0.1 秒增加 2 点 Stamina，并继续经过 AttributeSet 的 `[0, MaxStamina]` 约束。`UAshenOathStaminaRecoveryComponent` 只持有自己的延迟计时器和恢复 Effect；任一 Combat Ability 成功提交非零 Cost 后通知它重启恢复，拒绝动作不会改动当前恢复状态。详见 [战斗动作与伤害](combat-actions.md)。
+玩家耐力恢复使用蓝图配置的 `GE_Player_StaminaRecovery`，无限期且每 0.1 秒增加 2 点 Stamina，并继续经过 AttributeSet 的 `[0, MaxStamina]` 约束。`UAshenOathStaminaRecoveryComponent` 只持有自己的延迟计时器和恢复 Effect；任一 Combat Ability 成功提交非零 Cost 后通知它重启恢复，拒绝动作不会改动当前恢复状态。详见 [战斗动作与伤害](combat-actions.md)。

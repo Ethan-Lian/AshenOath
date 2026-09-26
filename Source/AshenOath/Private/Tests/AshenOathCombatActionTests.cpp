@@ -6,7 +6,6 @@
 #include "AbilitySystem/Ability/AshenOathDodgeAbility.h"
 #include "AbilitySystem/AshenOathAttributeSet.h"
 #include "AbilitySystem/AshenOathStaminaRecoveryComponent.h"
-#include "AbilitySystem/AshenOathStaminaRegenerationEffect.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystem/Data/AshenOathDodgeActionData.h"
 #include "Damage/CombatDamageComponent.h"
@@ -18,11 +17,11 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "GameplayAbilitySpec.h"
+#include "GameplayEffect.h"
 #include "GameplayEffectTypes.h"
 #include "GameplayTags/AshenOathGameplayTags.h"
 #include "Misc/AutomationTest.h"
 #include "Targeting/CombatTargetingComponent.h"
-#include "UObject/UnrealType.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FAshenOathDodgeAbilityLifecycleTest,
@@ -207,7 +206,7 @@ bool FAshenOathDodgeAbilityLifecycleTest::RunTest(const FString& Parameters)
 	);
 
 	FCombatDamageAttempt DamageAttempt;
-	DamageAttempt.DamageEffect = UAshenOathStaminaRegenerationEffect::StaticClass();
+	DamageAttempt.DamageEffect = UGameplayEffect::StaticClass();
 	DamageAttempt.SourceActor = Source;
 	DamageAttempt.HitTimeSeconds = World->GetTimeSeconds();
 
@@ -281,18 +280,8 @@ bool FAshenOathDodgeAbilityLifecycleTest::RunTest(const FString& Parameters)
 		TEXT("Side dodge test acquires its lock target"),
 		Targeting->TrySetTarget(Source)
 	);
-	const FFloatProperty* InwardAngleProperty = CastField<FFloatProperty>(
-		PlayerClass->FindPropertyByName(TEXT("LockedSideDodgeInwardAngle"))
-	);
-	TestNotNull(TEXT("Player exposes the configured locked side-dodge angle"),
-		InwardAngleProperty);
-	if (!InwardAngleProperty)
-	{
-		CleanupWorld();
-		return false;
-	}
 	const float InwardAngle = FMath::Clamp(
-		InwardAngleProperty->GetPropertyValue_InContainer(Player), 0.0f, 45.0f
+		ForwardDodgeData->LockedSideDodgeInwardAngle, 0.0f, 45.0f
 	);
 	const float SideAngleFromTarget = 90.0f - InwardAngle;
 	const FVector SideDodgeToTarget = FRotationMatrix(
@@ -634,7 +623,20 @@ bool FAshenOathDodgeAbilityLifecycleTest::RunTest(const FString& Parameters)
 			}
 		);
 
-	Recovery->Configure(UAshenOathStaminaRegenerationEffect::StaticClass(), 0.0f);
+	UClass* RecoveryEffectClass = LoadClass<UGameplayEffect>(
+		nullptr,
+		TEXT("/Game/AshenOath/AbilitySystem/Effects/Player/GE_Player_StaminaRecovery.GE_Player_StaminaRecovery_C")
+	);
+	TestNotNull(TEXT("Player stamina recovery GameplayEffect loads"), RecoveryEffectClass);
+	if (!RecoveryEffectClass)
+	{
+		PlayerAbilitySystem->OnActiveGameplayEffectAddedDelegateToSelf.Remove(
+			RecoveryAppliedDelegate
+		);
+		CleanupWorld();
+		return false;
+	}
+	Recovery->Configure(RecoveryEffectClass, 0.0f);
 	Recovery->NotifyStaminaCostCommitted();
 	PlayerAbilitySystem->OnActiveGameplayEffectAddedDelegateToSelf.Remove(
 		RecoveryAppliedDelegate

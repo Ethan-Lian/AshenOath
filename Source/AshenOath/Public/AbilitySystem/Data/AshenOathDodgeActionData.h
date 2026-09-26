@@ -24,6 +24,11 @@ public:
 		meta = (ClampMin = "0.01", Units = "s", EditCondition = "MovementDistance > 0.0", EditConditionHides))
 	float MovementDuration = 0.0f;
 
+	// Only the forward asset uses this when a locked side dodge is requested.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat Action|Movement",
+		meta = (ClampMin = "0.0", ClampMax = "45.0", Units = "deg"))
+	float LockedSideDodgeInwardAngle = 15.0f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat Action|Window")
 	FGameplayTagContainer WindowTags;
 
