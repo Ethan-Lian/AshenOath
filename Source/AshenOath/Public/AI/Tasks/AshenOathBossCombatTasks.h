@@ -20,9 +20,6 @@ struct ASHENOATH_API FAshenOathBossDecideTaskInstanceData
 
 	UPROPERTY(EditAnywhere, Category = Parameter, meta = (ClampMin = "0.0", Units = "cm"))
 	float DashMinStartRange = 500.0f;
-
-	UPROPERTY(EditAnywhere, Category = Parameter, meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float DashProbability = 0.35f;
 };
 
 /** Chooses one approach, attack, or wait intent before the shared combat loop branches. */
@@ -126,9 +123,6 @@ USTRUCT()
 struct ASHENOATH_API FAshenOathBossSingleSwingTaskInstanceData
 {
 	GENERATED_BODY()
-
-	UPROPERTY(EditAnywhere, Category = Parameter, meta = (ClampMin = "0.0", Units = "cm"))
-	float DashMinRange = 500.0f;
 
 	UPROPERTY(Transient)
 	TObjectPtr<AAshenOathBossCharacter> Boss;

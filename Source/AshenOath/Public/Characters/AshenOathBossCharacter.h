@@ -23,6 +23,8 @@ class UAshenOathBossChargedSwingAbility;
 class UAshenOathBossDashSwingAbility;
 class UCombatHitReactionComponent;
 class UCombatDeathComponent;
+class UAshenOathBossDecisionComponent;
+class AActor;
 struct FAbilityEndedData;
 
 UENUM()
@@ -72,15 +74,6 @@ struct FAshenOathBossAttackStartResult
 	FAshenOathBossAttackRequestHandle RequestHandle;
 };
 
-struct FAshenOathBossCombatDecision
-{
-	EAshenOathBossCombatIntent Intent = EAshenOathBossCombatIntent::None;
-	EAshenOathBossAttackType AttackType = EAshenOathBossAttackType::SingleSwing;
-	float ApproachRange = 0.0f;
-	float MeleeRange = 0.0f;
-};
-
-
 /**
  * AI-side GAS host.
  *
@@ -126,24 +119,17 @@ public:
 	// returned as Succeeded/Failed; only later ends use OnBossAttackEnded().
 	FAshenOathBossAttackStartResult RequestBossAttack(EAshenOathBossAttackType AttackType);
 
-	// Rotates available melee attacks and avoids selecting two dashes in a row.
-	// Only accepted requests advance the selection history.
-	FAshenOathBossAttackStartResult RequestFirstPhaseAttack(
-		float TargetDistance,
-		float DashMinRange
-	);
-
-	// Selects one first-phase intent using center-to-center 2D distances in cm.
+	// Selects one first-phase intent for the observed target.
 	// The decision persists across StateTree transitions until its consumer takes it.
 	bool ChooseFirstPhaseCombatIntent(
-		float TargetDistance,
+		AActor* TargetActor,
 		float MeleeRange,
-		float DashMinStartRange,
-		float DashProbability
+		float DashMinStartRange
 	);
 
-	EAshenOathBossCombatIntent GetPendingCombatIntent() const;
+	EAshenOathBossCombatIntent GetPendingCombatIntent();
 	void ClearPendingCombatDecision();
+	bool IsCurrentCombatTarget(const AActor* TargetActor) const;
 
 	// Consumes only an Approach decision and returns its center-to-center range in cm.
 	bool TryConsumeApproachDecision(float& OutRange);
@@ -164,6 +150,8 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+	friend class UAshenOathBossDecisionComponent;
+
 	void ApplyInitialAttributes();
 
 	bool GrantConfiguredAbilities();
@@ -184,20 +172,17 @@ private:
 		EAshenOathBossAttackType AttackType,
 		FGameplayAbilitySpecHandle& OutSpecHandle
 	) const;
+
 	FAshenOathBossAttackRequestHandle ReserveBossAttackRequest(
 		FGameplayAbilitySpecHandle SpecHandle
 	);
+
 	FAshenOathBossAttackStartResult ResolveBossAttackStart(
 		FAshenOathBossAttackRequestHandle Request,
 		FGameplayAbilitySpecHandle SpecHandle,
 		bool bAccepted
 	);
-	FAshenOathBossAttackStartResult RequestSelectedDashAttack(
-		const FAshenOathBossCombatDecision& Decision
-	);
-	FAshenOathBossAttackStartResult RequestSelectedNearAttack(
-		const FAshenOathBossCombatDecision& Decision
-	);
+
 	FGameplayAbilitySpecHandle ResolveBossAttackSpec(EAshenOathBossAttackType AttackType) const;
 
 	void FinishBossAttackRequest(bool bWasCancelled);
@@ -215,6 +200,9 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AshenOath|AI", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UStateTreeComponent> StateTreeComponent;
+
+	UPROPERTY(VisibleAnywhere, Category = "AshenOath|AI")
+	TObjectPtr<UAshenOathBossDecisionComponent> DecisionComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AshenOath|Combat", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UCombatDamageComponent> CombatDamageComponent;
@@ -270,10 +258,6 @@ private:
 	FAshenOathBossAttackEndedEvent BossAttackEndedEvent;
 
 	uint64 NextBossAttackRequestValue = 1;
-	FAshenOathBossCombatDecision PendingCombatDecision;
-	FRandomStream CombatDecisionRandomStream;
-	int32 NextNearAttackIndex = 0;
-	bool bLastAttackWasDash = false;
 	bool bStartingBossAttack = false;
 	bool bSynchronousBossAttackEnded = false;
 	bool bSynchronousBossAttackWasCancelled = false;

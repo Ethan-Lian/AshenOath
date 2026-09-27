@@ -9,7 +9,8 @@
 | 入口 | 当前责任 |
 |---|---|
 | [Player Character](../../Source/AshenOath/Private/Characters/AshenOathPlayerCharacter.cpp) | 构造 ASC/AttributeSet 与 Combat 组件；刷新 ActorInfo、授予 Ability，注入项目 Tag/属性并响应死亡事件 |
-| [Boss Character](../../Source/AshenOath/Private/Characters/AshenOathBossCharacter.cpp) | 构造 ASC/AttributeSet、Combat 与 StateTree 组件，授予已配置的第一阶段近战 Ability，并协调请求身份、GAS、树和死亡的启动/退出 |
+| [Boss Character](../../Source/AshenOath/Private/Characters/AshenOathBossCharacter.cpp) | 构造 ASC/AttributeSet、Combat、Decision 与 StateTree 组件，授予已配置的第一阶段近战 Ability，并协调请求身份、GAS、树和死亡的启动/退出 |
+| [Boss Decision Component](../../Source/AshenOath/Private/AI/AshenOathBossDecisionComponent.cpp) | 保存第一阶段 Utility 配置、近期使用与冷却历史、一次决策的观察和待执行排名；复核目标后经 Character 请求攻击 |
 | [AttributeSet](../../Source/AshenOath/Private/AbilitySystem/AshenOathAttributeSet.cpp) | 维护 Health/MaxHealth、Stamina/MaxStamina 的范围 |
 | [Native Gameplay Tags](../../Source/AshenOath/Private/GameplayTags/AshenOathGameplayTags.cpp) | 注册 `State.Dead`、`State.Invulnerable`、`State.Staggered` |
 
@@ -57,7 +58,7 @@ EndPlay
   → ASC.ClearActorInfo()
 ```
 
-StateTree 关闭自动启动，由 Boss 显式控制顺序：初始属性、必需的单次挥击配置和 GameMode 注册成功后才启动；其余三招仅在各自 ActionData 配置后授予。退出时先停树，使活动 Task 先解除监听并按请求句柄取消自己的攻击，再清理 ASC。Boss 在激活前记录请求归属；同步完成直接随返回值交付，异步结束才按请求句柄广播。轮换历史保存在 Boss 实例，避免 StateTree 离开攻击 State 后重建 Task 数据时重置顺序。
+StateTree 关闭自动启动，由 Boss 显式控制顺序：初始属性、必需的单次挥击配置和 GameMode 注册成功后才启动；其余三招仅在各自 ActionData 配置后授予。退出时先停树，使活动 Task 先解除监听并按请求句柄取消自己的攻击，再清理 ASC。Boss 在激活前记录请求归属；同步完成直接随返回值交付，异步结束才按请求句柄广播。近期使用与冷却历史保存在随 Boss 存续的 Decision Component 中，避免 StateTree 离开攻击 State 后重建 Task 数据时重置。
 
 ### 初始 Effect 的应用
 
