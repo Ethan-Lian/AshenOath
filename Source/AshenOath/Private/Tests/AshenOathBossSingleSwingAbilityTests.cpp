@@ -2,7 +2,9 @@
 
 #include "Characters/AshenOathBossCharacter.h"
 
+#include "AI/AshenOathBossDecisionComponent.h"
 #include "AbilitySystemComponent.h"
+#include "AbilitySystem/AshenOathAttributeSet.h"
 #include "AbilitySystem/Data/AshenOathMeleeActionData.h"
 #include "AbilitySystem/Data/AshenOathBossDashSwingActionData.h"
 #include "Actions/CombatMeleeComponent.h"
@@ -11,9 +13,12 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/PlayerController.h"
 #include "GameplayAbilitySpec.h"
 #include "GameplayEffect.h"
 #include "GameplayTags/AshenOathGameplayTags.h"
+#include "Kismet/GameplayStatics.h"
 #include "Misc/AutomationTest.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -193,8 +198,8 @@ bool FAshenOathBossSingleSwingAbilityLifecycleTest::RunTest(const FString& Param
 	);
 
 	const FAshenOathBossAttackStartResult FirstRequest =
-		Boss->RequestFirstPhaseAttack(150.0f, 225.0f);
-	TestEqual(TEXT("The first-phase request runs the available swing"),
+		Boss->RequestBossAttack(EAshenOathBossAttackType::SingleSwing);
+	TestEqual(TEXT("A direct request runs the available swing"),
 		FirstRequest.State, EAshenOathBossAttackStartState::Running);
 	TestTrue(TEXT("A running request has an identity"),
 		FirstRequest.RequestHandle.IsValid());
@@ -221,11 +226,42 @@ bool FAshenOathBossSingleSwingAbilityLifecycleTest::RunTest(const FString& Param
 	TestEqual(TEXT("Each owned request emits one completion"), RequestEndCount, 2);
 	Boss->OnBossAttackEnded().Remove(RequestEndHandle);
 
-	TestTrue(TEXT("A missed dash roll produces an approach decision at any distance"),
-		Boss->ChooseFirstPhaseCombatIntent(900.0f, 300.0f, 500.0f, 0.0f));
-	TestEqual(TEXT("The missed dash roll selects normal approach"),
-		Boss->GetPendingCombatIntent(), EAshenOathBossCombatIntent::Approach);
+	ACharacter* DecisionTarget = World->SpawnActor<ACharacter>(
+		ACharacter::StaticClass(),
+		Boss->GetActorLocation() + FVector(900.0f, 0.0f, 0.0f),
+		FRotator::ZeroRotator
+	);
+	TestNotNull(TEXT("Decision target spawns"), DecisionTarget);
+	if (!DecisionTarget)
+	{
+		CleanupWorld();
+		return false;
+	}
+	APlayerController* DecisionController = World->SpawnActor<APlayerController>();
+	TestNotNull(TEXT("Decision controller spawns"), DecisionController);
+	if (!DecisionController)
+	{
+		CleanupWorld();
+		return false;
+	}
+	DecisionController->Possess(DecisionTarget);
+	TestTrue(TEXT("The decision target is the current player pawn"),
+		UGameplayStatics::GetPlayerPawn(World, 0) == DecisionTarget);
+
+	TestTrue(TEXT("An eligible distant dash produces a decision"),
+		Boss->ChooseFirstPhaseCombatIntent(DecisionTarget, 300.0f, 500.0f));
+	TestEqual(TEXT("An eligible distant dash is selected by Utility"),
+		Boss->GetPendingCombatIntent(), EAshenOathBossCombatIntent::Attack);
 	float ApproachRange = 0.0f;
+	Boss->ClearPendingCombatDecision();
+	TestFalse(TEXT("An attack decision cannot be consumed as an approach decision"),
+		Boss->TryConsumeApproachDecision(ApproachRange));
+
+	DecisionTarget->SetActorLocation(Boss->GetActorLocation() + FVector(400.0f, 0.0f, 0.0f));
+	TestTrue(TEXT("A target between melee and dash range produces an approach decision"),
+		Boss->ChooseFirstPhaseCombatIntent(DecisionTarget, 300.0f, 500.0f));
+	TestEqual(TEXT("The middle range selects approach"),
+		Boss->GetPendingCombatIntent(), EAshenOathBossCombatIntent::Approach);
 	TestTrue(TEXT("The approach decision can be consumed once"),
 		Boss->TryConsumeApproachDecision(ApproachRange));
 	TestEqual(TEXT("The distant approach ends at melee range"),
@@ -233,27 +269,150 @@ bool FAshenOathBossSingleSwingAbilityLifecycleTest::RunTest(const FString& Param
 	TestFalse(TEXT("The same approach decision cannot be consumed again"),
 		Boss->TryConsumeApproachDecision(ApproachRange));
 
+	DecisionTarget->SetActorLocation(Boss->GetActorLocation() + FVector(500.0f, 0.0f, 0.0f));
 	TestTrue(TEXT("A target at the dash threshold produces an approach decision"),
-		Boss->ChooseFirstPhaseCombatIntent(500.0f, 300.0f, 500.0f, 1.0f));
+		Boss->ChooseFirstPhaseCombatIntent(DecisionTarget, 300.0f, 500.0f));
 	TestTrue(TEXT("The threshold decision approaches melee range"),
 		Boss->TryConsumeApproachDecision(ApproachRange));
 	TestEqual(TEXT("The melee approach uses the configured range"),
 		ApproachRange, 300.0f);
 
+	DecisionTarget->SetActorLocation(Boss->GetActorLocation() + FVector(900.0f, 0.0f, 0.0f));
 	TestTrue(TEXT("An eligible dash has no maximum start range"),
-		Boss->ChooseFirstPhaseCombatIntent(900.0f, 300.0f, 500.0f, 1.0f));
+		Boss->ChooseFirstPhaseCombatIntent(DecisionTarget, 300.0f, 500.0f));
 	TestEqual(TEXT("The dash opportunity becomes an attack intent"),
 		Boss->GetPendingCombatIntent(), EAshenOathBossCombatIntent::Attack);
-	TestEqual(TEXT("A rejected dash returns to a melee approach"),
+	DecisionTarget->SetActorLocation(Boss->GetActorLocation() + FVector(400.0f, 0.0f, 0.0f));
+	TestEqual(TEXT("A dash that lost its start range is not activated"),
 		Boss->RequestSelectedCombatAttack().State, EAshenOathBossAttackStartState::Rejected);
+	TestTrue(TEXT("Moving inside dash range still approaches from outside melee"),
+		Boss->TryConsumeApproachDecision(ApproachRange));
+	DecisionTarget->SetActorLocation(Boss->GetActorLocation() + FVector(900.0f, 0.0f, 0.0f));
+	TestTrue(TEXT("The distant dash decision can be refreshed"),
+		Boss->ChooseFirstPhaseCombatIntent(DecisionTarget, 300.0f, 500.0f));
+	AbilitySystem->AddLooseGameplayTag(AshenOathGameplayTags::State_Staggered);
+	const FAshenOathBossAttackStartResult RejectedDash = Boss->RequestSelectedCombatAttack();
+	AbilitySystem->RemoveLooseGameplayTag(AshenOathGameplayTags::State_Staggered);
+	TestEqual(TEXT("A rejected dash returns to a melee approach"),
+		RejectedDash.State, EAshenOathBossAttackStartState::Rejected);
 	TestTrue(TEXT("A rejected dash sets a safe approach fallback"),
 		Boss->TryConsumeApproachDecision(ApproachRange));
 	TestEqual(TEXT("The dash fallback approaches melee range"),
 		ApproachRange, 300.0f);
+	TestTrue(TEXT("A rejected dash did not start its cooldown"),
+		Boss->ChooseFirstPhaseCombatIntent(DecisionTarget, 300.0f, 500.0f));
+	TestEqual(TEXT("The rejected dash remains eligible"),
+		Boss->GetPendingCombatIntent(), EAshenOathBossCombatIntent::Attack);
+	Boss->ClearPendingCombatDecision();
+
+	DecisionTarget->SetActorLocation(Boss->GetActorLocation() + FVector(150.0f, 0.0f, 0.0f));
+	Boss->SetActorRotation(FRotator::ZeroRotator);
 	TestTrue(TEXT("A nearby target produces a combat decision"),
-		Boss->ChooseFirstPhaseCombatIntent(150.0f, 300.0f, 500.0f, 1.0f));
+		Boss->ChooseFirstPhaseCombatIntent(DecisionTarget, 300.0f, 500.0f));
 	TestEqual(TEXT("A nearby target selects a melee attack"),
 		Boss->GetPendingCombatIntent(), EAshenOathBossCombatIntent::Attack);
+	UAshenOathBossDecisionComponent* DecisionComponent =
+		Boss->FindComponentByClass<UAshenOathBossDecisionComponent>();
+	TestNotNull(TEXT("Boss owns the Utility decision component"), DecisionComponent);
+	if (!DecisionComponent || DecisionComponent->GetPendingDecisionForTesting().RankedAttacks.IsEmpty())
+	{
+		CleanupWorld();
+		return false;
+	}
+	TestEqual(TEXT("SingleSwing wins at its preferred near distance"),
+		DecisionComponent->GetPendingDecisionForTesting().RankedAttacks[0].AttackType,
+		EAshenOathBossAttackType::SingleSwing);
+
+	DecisionTarget->SetActorLocation(Boss->GetActorLocation() + FVector(210.0f, 0.0f, 0.0f));
+	TestTrue(TEXT("A combo-range decision succeeds"),
+		Boss->ChooseFirstPhaseCombatIntent(DecisionTarget, 300.0f, 500.0f));
+	TestEqual(TEXT("Combo wins at its preferred distance"),
+		DecisionComponent->GetPendingDecisionForTesting().RankedAttacks[0].AttackType,
+		EAshenOathBossAttackType::Combo);
+
+	DecisionTarget->SetActorLocation(Boss->GetActorLocation() + FVector(260.0f, 0.0f, 0.0f));
+	TestTrue(TEXT("A charged-swing-range decision succeeds"),
+		Boss->ChooseFirstPhaseCombatIntent(DecisionTarget, 300.0f, 500.0f));
+	TestEqual(TEXT("ChargedSwing wins at its preferred distance"),
+		DecisionComponent->GetPendingDecisionForTesting().RankedAttacks[0].AttackType,
+		EAshenOathBossAttackType::ChargedSwing);
+
+	DecisionTarget->SetActorLocation(Boss->GetActorLocation() + FVector(150.0f, 0.0f, 0.0f));
+	TestTrue(TEXT("The near decision refreshes after range checks"),
+		Boss->ChooseFirstPhaseCombatIntent(DecisionTarget, 300.0f, 500.0f));
+
+	const EAshenOathBossAttackType FirstRankedAttack =
+		DecisionComponent->GetPendingDecisionForTesting().RankedAttacks[0].AttackType;
+	const float FrontFacingPenalty =
+		DecisionComponent->GetPendingDecisionForTesting().RankedAttacks[0].FacingPenalty;
+	Boss->SetActorRotation(FRotator(0.0f, 180.0f, 0.0f));
+	TestTrue(TEXT("Turning away still produces a decision"),
+		Boss->ChooseFirstPhaseCombatIntent(DecisionTarget, 300.0f, 500.0f));
+	for (const FAshenOathBossScoredAttack& Candidate :
+		DecisionComponent->GetPendingDecisionForTesting().RankedAttacks)
+	{
+		if (Candidate.AttackType == FirstRankedAttack)
+		{
+			TestTrue(TEXT("Turning away increases the facing penalty"),
+				Candidate.FacingPenalty > FrontFacingPenalty);
+			break;
+		}
+	}
+	Boss->SetActorRotation(FRotator::ZeroRotator);
+
+	DecisionComponent->InitializeDecisionStream(1337);
+	TestTrue(TEXT("The first seeded decision succeeds"),
+		Boss->ChooseFirstPhaseCombatIntent(DecisionTarget, 300.0f, 500.0f));
+	const auto FirstSeededRanking =
+		DecisionComponent->GetPendingDecisionForTesting().RankedAttacks;
+	DecisionComponent->InitializeDecisionStream(1337);
+	TestTrue(TEXT("The repeated seeded decision succeeds"),
+		Boss->ChooseFirstPhaseCombatIntent(DecisionTarget, 300.0f, 500.0f));
+	const auto& SecondSeededRanking =
+		DecisionComponent->GetPendingDecisionForTesting().RankedAttacks;
+	TestEqual(TEXT("The same seed produces the same candidate count"),
+		SecondSeededRanking.Num(), FirstSeededRanking.Num());
+	for (int32 Index = 0; Index < FMath::Min(FirstSeededRanking.Num(), SecondSeededRanking.Num()); ++Index)
+	{
+		TestEqual(TEXT("The same seed preserves attack order"),
+			SecondSeededRanking[Index].AttackType, FirstSeededRanking[Index].AttackType);
+		TestEqual(TEXT("The same seed preserves the tie value"),
+			SecondSeededRanking[Index].TieBreak, FirstSeededRanking[Index].TieBreak);
+	}
+
+	const EAshenOathBossAttackType SelectedAttack = SecondSeededRanking[0].AttackType;
+	const float MaxStamina = AbilitySystem->GetNumericAttribute(
+		UAshenOathAttributeSet::GetMaxStaminaAttribute());
+	AbilitySystem->SetNumericAttributeBase(
+		UAshenOathAttributeSet::GetStaminaAttribute(), MaxStamina);
+	const FAshenOathBossAttackStartResult UtilityRequest =
+		Boss->RequestSelectedCombatAttack();
+	TestTrue(TEXT("The selected Utility attack is accepted"),
+		UtilityRequest.State == EAshenOathBossAttackStartState::Running ||
+		UtilityRequest.State == EAshenOathBossAttackStartState::Succeeded);
+	if (UtilityRequest.State == EAshenOathBossAttackStartState::Running)
+	{
+		Boss->CancelBossAttack(UtilityRequest.RequestHandle);
+	}
+
+	TestTrue(TEXT("A new decision follows the accepted attack"),
+		Boss->ChooseFirstPhaseCombatIntent(DecisionTarget, 300.0f, 500.0f));
+	bool bSelectedAttackIsCoolingDown = true;
+	for (const FAshenOathBossScoredAttack& Candidate :
+		DecisionComponent->GetPendingDecisionForTesting().RankedAttacks)
+	{
+		bSelectedAttackIsCoolingDown &= Candidate.AttackType != SelectedAttack;
+	}
+	TestTrue(TEXT("An accepted attack is excluded during its cooldown"),
+		bSelectedAttackIsCoolingDown);
+	DecisionController->UnPossess();
+	TestEqual(TEXT("A decision for a lost player pawn is no longer visible"),
+		Boss->GetPendingCombatIntent(), EAshenOathBossCombatIntent::None);
+	TestEqual(TEXT("A stale attack decision cannot activate a Boss Ability"),
+		Boss->RequestSelectedCombatAttack().State, EAshenOathBossAttackStartState::Rejected);
+	TestFalse(TEXT("A lost player pawn cannot produce a new decision"),
+		Boss->ChooseFirstPhaseCombatIntent(DecisionTarget, 300.0f, 500.0f));
+	DecisionController->Possess(DecisionTarget);
 
 	TestActionData->StartSection = TEXT("MissingSection");
 	TestFalse(TEXT("An invalid Boss start section rejects activation"),

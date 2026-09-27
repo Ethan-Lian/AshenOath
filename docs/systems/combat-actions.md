@@ -51,9 +51,30 @@
 
 连招的每个 `PlayerComboWindow` 必须完整落在对应 Montage Section 内，并与相邻窗口留出间隔。窗口开始时 Ability 根据当前 Section 决定下一段；跨越 Section 边界或彼此重叠会使下一段的开窗被忽略。
 
-Boss 近战复用同一执行基类，由 StateTree 经 Boss Character 的请求身份接口激活。请求若在 `TryActivateAbility` 内同步结束，直接返回成功或失败；仍在执行时，Task 再订阅携带请求句柄的结束事件。Task 退出先解除监听，再按句柄取消自己的攻击，因此旧请求不能取消下一招。第一阶段暂按距离选择突进，并轮换近距离三招；复杂 Utility 评分留待后续。
+Boss 近战复用同一执行基类。StateTree 经 Boss Character 的稳定入口调用 Decision Component 选招，再由 Character 的请求身份接口激活 GAS。请求若在 `TryActivateAbility` 内同步结束，直接返回成功或失败；仍在执行时，Task 再订阅携带请求句柄的结束事件。Task 退出先解除监听，再按句柄取消自己的攻击，因此旧请求不能取消下一招。Decision Component 保存可编辑的四招 Utility 配置、近期使用与冷却历史；Decide 拍下距离、朝向和可用攻击，筛选距离与冷却资格，再按基础分减距离、朝向、近期使用惩罚排序，同分由种子随机流决定。执行前复核目标与距离；被拒绝才尝试下一名，成功受理才记录历史。无候选时按距离接近或等待。
 
-第一阶段在玩家超过 300 cm 时需要接近；只有超过可配置的 500 cm 起冲距离、突进资源可用且上一招不是突进时，才按 `DashProbability` 尝试 DashSwing。未选中突进就正常寻路接近 300 cm。突进开始后，Ability 循环播放不含位移的 `DashSection`；追击 Task 将 `MaxWalkSpeed` 临时乘以 `DashSpeedMultiplier`，每帧按玩家实时位置向 CharacterMovement 提交移动输入并面向玩家。进入 `StopDistance` 后停止移动并恢复原移速，Ability 按玩家当前位置转向、建立 Melee 会话并跳到 `SwingSection`。突进不设最大时长或距离；目标失效、持续受阻与动作取消均结束追击，不会在射程外挥击。
+第一阶段玩家超过默认 300 cm 近战范围时，只有超过默认 500 cm 起冲距离、DashSwing 配置与资源可用且不在冷却中，突进才进入候选；没有可用突进就正常寻路接近 300 cm。突进开始后，Ability 循环播放不含位移的 `DashSection`；追击 Task 将 `MaxWalkSpeed` 临时乘以 `DashSpeedMultiplier`，每帧按玩家实时位置向 CharacterMovement 提交移动输入并面向玩家。进入 `StopDistance` 后停止移动并恢复原移速，Ability 按玩家当前位置转向、建立 Melee 会话并跳到 `SwingSection`。突进不设最大时长或距离；目标失效、持续受阻与动作取消均结束追击，不会在射程外挥击。
+
+Test 地图当前使用 Decision Component 的四招默认值；这是本轮实机流程测试所用的初始平衡值，后续手感调整可直接修改 Boss 的组件配置。四招基础分均为 `2.0`，距离权重均为 `1.0`。
+
+| 招式 | 偏好距离 | 距离衰减 | 朝向权重 | 近期使用惩罚 | 冷却 |
+|---|---:|---:|---:|---:|---:|
+| SingleSwing | 170 cm | 300 cm | 0.50 | 0.75 | 0.75 s |
+| Combo | 210 cm | 300 cm | 0.75 | 1.00 | 2.50 s |
+| ChargedSwing | 260 cm | 300 cm | 0.90 | 1.00 | 4.00 s |
+| DashSwing | 700 cm | 450 cm | 0.25 | 1.00 | 5.00 s |
+
+本阶段自动化运行开启 `LogAshenOathBossUtility Verbose` 后记录了距离 900、150 cm 和冷却后的决策；210、260 cm 两行按同一配置与评分公式计算，并在定向测试中加入了对应断言。分数仅对应这些快照，不代表整场实机战斗的分布：
+
+| 快照 | 合格候选及分数 | 选中原因 |
+|---|---|---|
+| 距离 900 cm，正面 | DashSwing 1.56 | 近战三招超出范围；DashSwing 的基础分 2.00 减距离惩罚 0.44 后为唯一候选 |
+| 距离 150 cm，正面 | SingleSwing 1.93、Combo 1.80、ChargedSwing 1.63 | SingleSwing 距离惩罚仅 0.07，得分最高 |
+| 距离 210 cm，正面（计算值） | Combo 2.00、SingleSwing 1.87、ChargedSwing 1.83 | Combo 正处偏好距离，距离惩罚为零 |
+| 距离 260 cm，正面（计算值） | ChargedSwing 2.00、Combo 1.83、SingleSwing 1.70 | ChargedSwing 正处偏好距离，距离惩罚为零 |
+| SingleSwing 请求受理后的下一次近距离决策 | Combo 1.80、ChargedSwing 1.63 | SingleSwing 处于冷却中，被资格筛选排除 |
+
+同一测试把 Boss 转至背对目标时，SingleSwing 朝向惩罚从 0.00 变为 0.50，得分从 1.93 降为 1.43；评分依据可从日志逐项复核。每次 Decide 重新取 Snapshot，执行前再复核目标和距离；StateTree 的攻击 Task 只保留自己的请求句柄，根据同步结果或带句柄的异步结束事件报告成功或失败，树再按转换进入 Recovery。Task 退出时先解除监听再按句柄取消。
 
 ## Notify 与检测会话
 

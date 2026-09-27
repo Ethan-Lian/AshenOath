@@ -46,7 +46,7 @@ EStateTreeRunStatus FAshenOathBossDecideTask::EnterState(
 	const FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
 	AAshenOathBossCharacter* Boss = ResolveBoss(Context);
 	AActor* Target = Boss ? UGameplayStatics::GetPlayerPawn(Boss, 0) : nullptr;
-	if (!IsValid(Boss) || !IsValid(Target))
+	if (!IsValid(Boss) || !Boss->IsCurrentCombatTarget(Target))
 	{
 		if (IsValid(Boss))
 		{
@@ -55,12 +55,10 @@ EStateTreeRunStatus FAshenOathBossDecideTask::EnterState(
 		return EStateTreeRunStatus::Failed;
 	}
 
-	const float Distance = FVector::Dist2D(Boss->GetActorLocation(), Target->GetActorLocation());
 	return Boss->ChooseFirstPhaseCombatIntent(
-		Distance,
+		Target,
 		InstanceData.MeleeRange,
-		InstanceData.DashMinStartRange,
-		InstanceData.DashProbability)
+		InstanceData.DashMinStartRange)
 		? EStateTreeRunStatus::Succeeded
 		: EStateTreeRunStatus::Failed;
 }
@@ -68,7 +66,7 @@ EStateTreeRunStatus FAshenOathBossDecideTask::EnterState(
 bool FAshenOathBossIntentCondition::TestCondition(FStateTreeExecutionContext& Context) const
 {
 	const FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
-	const AAshenOathBossCharacter* Boss = ResolveBoss(Context);
+	AAshenOathBossCharacter* Boss = ResolveBoss(Context);
 	return IsValid(Boss) && Boss->GetPendingCombatIntent() == InstanceData.ExpectedIntent;
 }
 
@@ -88,12 +86,15 @@ EStateTreeRunStatus FAshenOathBossApproachTask::EnterState(
 	InstanceData.EffectiveRange = InstanceData.AttackRange;
 
 	if (!IsValid(InstanceData.Boss) ||
-		!IsValid(InstanceData.TargetActor) ||
+		!InstanceData.Boss->IsCurrentCombatTarget(InstanceData.TargetActor) ||
 		!IsValid(InstanceData.AIController))
 	{
 		return EStateTreeRunStatus::Failed;
 	}
-	InstanceData.Boss->TryConsumeApproachDecision(InstanceData.EffectiveRange);
+	if (!InstanceData.Boss->TryConsumeApproachDecision(InstanceData.EffectiveRange))
+	{
+		return EStateTreeRunStatus::Failed;
+	}
 
 	if (IsWithinRange(*InstanceData.Boss, *InstanceData.TargetActor, InstanceData.EffectiveRange))
 	{
@@ -140,7 +141,7 @@ EStateTreeRunStatus FAshenOathBossApproachTask::Tick(
 	const FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
 
 	if (!IsValid(InstanceData.Boss) ||
-		!IsValid(InstanceData.TargetActor) ||
+		!InstanceData.Boss->IsCurrentCombatTarget(InstanceData.TargetActor) ||
 		!IsValid(InstanceData.AIController))
 	{
 		return EStateTreeRunStatus::Failed;
@@ -197,26 +198,23 @@ EStateTreeRunStatus FAshenOathBossSingleSwingTask::EnterState(
 	}
 
 	AActor* TargetActor = UGameplayStatics::GetPlayerPawn(InstanceData.Boss, 0);
-	if (!IsValid(TargetActor))
+	if (!InstanceData.Boss->IsCurrentCombatTarget(TargetActor))
 	{
+		InstanceData.Boss = nullptr;
+		return EStateTreeRunStatus::Failed;
+	}
+
+	const EAshenOathBossCombatIntent Intent = InstanceData.Boss->GetPendingCombatIntent();
+	if (Intent != EAshenOathBossCombatIntent::Attack)
+	{
+		InstanceData.Boss->ClearPendingCombatDecision();
 		InstanceData.Boss = nullptr;
 		return EStateTreeRunStatus::Failed;
 	}
 
 	FaceTarget(*InstanceData.Boss, *TargetActor);
-	const float Distance = FVector::Dist2D(
-		InstanceData.Boss->GetActorLocation(), TargetActor->GetActorLocation());
-	const EAshenOathBossCombatIntent Intent = InstanceData.Boss->GetPendingCombatIntent();
-	if (Intent != EAshenOathBossCombatIntent::Attack &&
-		Intent != EAshenOathBossCombatIntent::None)
-	{
-		InstanceData.Boss = nullptr;
-		return EStateTreeRunStatus::Failed;
-	}
-
-	const FAshenOathBossAttackStartResult StartResult = Intent == EAshenOathBossCombatIntent::Attack
-		? InstanceData.Boss->RequestSelectedCombatAttack()
-		: InstanceData.Boss->RequestFirstPhaseAttack(Distance, InstanceData.DashMinRange);
+	const FAshenOathBossAttackStartResult StartResult =
+		InstanceData.Boss->RequestSelectedCombatAttack();
 
 	if (StartResult.State != EAshenOathBossAttackStartState::Running)
 	{

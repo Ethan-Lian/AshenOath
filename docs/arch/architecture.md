@@ -41,7 +41,9 @@ flowchart TD
     P -->|初始化 / 读取状态 Tag| GAS
     B[Boss Character] -->|初始化| BGAS[Boss ASC / AttributeSet]
     B -->|显式 StartLogic / StopLogic| ST[StateTree Component]
-    ST -->|接近 / 请求第一阶段攻击 / 恢复| B
+    ST -->|决策 / 接近 / 攻击 / 恢复| B
+    B -->|第一阶段选招与待执行决定| BD[Boss Decision Component]
+    BD -->|可用性查询 / 攻击请求| B
     BGAS --> BATTACK[Boss 近战 GameplayAbilities]
     BATTACK -->|Montage 与会话| MELEE
 ```
@@ -51,7 +53,8 @@ flowchart TD
 | GameMode | 默认 Pawn/Controller 类、当前 Boss 和一次性胜负结果 | 首个有效死亡报告决定胜负；只在结算后接受重试并重新加载当前关卡 |
 | PlayerController | InputComponent 绑定、Mapping Context 注册、最近移动意图和重试转发 | 每次输入取当前 Pawn；结算时关闭 Gameplay 输入并切换到 UI，不自行决定胜负 |
 | Player Character | ASC、AttributeSet、镜头和 Combat 组件；使用继承的 CharacterMovement | 验证角色状态、选择玩家动作数据，将相对视角意图转为世界方向；不直接写战斗数值 |
-| Boss Character | ASC、AttributeSet、StateTreeComponent、四类近战 AbilitySpec 与请求身份 | 协调初始化和退出顺序；保存跨 StateTree 重入的第一阶段轮换历史，按距离尝试突进与近战，不播放动画或执行复杂评分 |
+| Boss Character | ASC、AttributeSet、StateTreeComponent、四类近战 AbilitySpec 与请求身份 | 协调初始化和退出顺序；向 StateTree 提供稳定入口，负责 GAS 攻击请求与取消 |
+| Boss Decision Component | 一次决策的 Snapshot、待执行 Decision、Utility 配置、随机流及近期使用与冷却历史 | 在 StateTree 决策时检查目标与攻击可用性，给合格招式评分并选择接近、攻击或等待；执行前复核目标与距离，再向 Character 请求攻击 |
 | AttributeSet | Health、MaxHealth、Stamina、MaxStamina | 只维护数值范围；Death 组件观察 Health 并拥有终止转换 |
 | Combat GameplayAbility 基类 | 动作互斥、ActionData Cost 检查/应用与成功消耗通知 | 只共享 GAS 事务，不编排具体攻击或闪避 |
 | MeleeAttack GameplayAbility 基类 | 玩家与 Boss 近战共用的 Montage Task、Cost 提交、动画来源身份、Melee 会话和清理 | 不决定具体输入语义、连招规则、蓄力阶段或 Boss 选招；结束、中断、失败统一经 `EndAbility` 释放会话 |
@@ -90,7 +93,7 @@ flowchart TD
 
 **结算到重试**：玩家或 Boss 的首个死亡报告提交唯一 Defeat/Victory → HUD 显示结算并关闭 Gameplay 输入 → Retry 按钮经 PlayerController 请求 GameMode → GameMode 重新加载当前关卡。
 
-**Boss 第一阶段循环**：StateTree 按距离选择接近或攻击；Boss 在近距离轮换单次挥击、连击、蓄力重挥，超过配置的 500 cm 起冲距离时按概率尝试 DashSwing，未选中则正常接近，且不连续选择突进 → DashSwing 的 Ability Task 临时提高移速并逐帧朝玩家当前位置移动，进入挥击距离后切换动画并建立 Melee 会话 → 攻击 Task 按本次请求句柄等待结果 → Recovery Task 保留无伤害间隔。树退出时 Task 先解除监听，再按句柄取消自己持有的攻击。后续 Utility 评分与阶段状态仍未接入。
+**Boss 第一阶段循环**：StateTree 请求 Boss 决策；Decision Component 拍下目标距离、朝向、可用攻击及近期历史的 Snapshot。近战招式只在近战范围内候选，DashSwing 只在起冲距离和停止距离外候选；冷却中的招式被排除。组件对候选计算基础分减去距离、朝向和近期使用惩罚，按分数排序，同分由可复现的随机流打破；没有可用招式时选择接近或等待。StateTree 消费待执行 Decision；攻击前组件复核目标与距离，经 Character 依排名请求 GAS 激活，仅在请求被拒绝时尝试下一个候选；成功受理后才更新历史与冷却。DashSwing 的 Ability Task 临时提高移速并逐帧朝玩家当前位置移动，进入挥击距离后切换动画并建立 Melee 会话 → 攻击 Task 按本次请求句柄等待结果 → Recovery Task 保留无伤害间隔。树退出时 Task 先解除监听，再按句柄取消自己持有的攻击。当前只覆盖第一阶段四招，阶段状态尚未接入。
 
 **初始化到退出**：玩家随占有刷新 GAS 上下文；Boss 在进入游戏时初始化 GAS，再调用 StateTree 启动。Boss 退出先停树，再清理 GAS 上下文，使树的退出逻辑仍可使用 GAS。
 
