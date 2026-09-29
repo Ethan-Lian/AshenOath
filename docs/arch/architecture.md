@@ -50,8 +50,8 @@ flowchart TD
 
 | 对象 | 持有或管理的内容 | 边界 |
 |---|---|---|
-| GameMode | 默认 Pawn/Controller 类、当前 Boss 和一次性胜负结果 | 首个有效死亡报告决定胜负；只在结算后接受重试并重新加载当前关卡 |
-| PlayerController | InputComponent 绑定、Mapping Context 注册、最近移动意图和重试转发 | 每次输入取当前 Pawn；结算时关闭 Gameplay 输入并切换到 UI，不自行决定胜负 |
+| GameMode | 默认 Pawn/Controller 类、当前 Boss、入口演出和一次性胜负结果 | 入口演出结束后开放战斗并启动 Boss AI；首个有效死亡报告决定胜负；只在结算后接受重试并重新加载当前关卡 |
+| PlayerController | InputComponent 绑定、Mapping Context 注册、最近移动意图和重试转发 | 每次输入取当前 Pawn；由 GameMode 在演出、战斗和结算时切换输入模式，不自行决定胜负 |
 | Player Character | ASC、AttributeSet、镜头和 Combat 组件；使用继承的 CharacterMovement | 验证角色状态、选择玩家动作数据，将相对视角意图转为世界方向；不直接写战斗数值 |
 | Boss Character | ASC、AttributeSet、StateTreeComponent、四类近战 AbilitySpec 与请求身份 | 协调初始化和退出顺序；向 StateTree 提供稳定入口，负责 GAS 攻击请求与取消 |
 | Boss Decision Component | 一次决策的 Snapshot、待执行 Decision、Utility 配置、随机流及近期使用与冷却历史 | 在 StateTree 决策时检查目标与攻击可用性，给合格招式评分并选择接近、攻击或等待；执行前复核目标与距离，再向 Character 请求攻击 |
@@ -91,11 +91,13 @@ flowchart TD
 
 **伤害到受击/死亡**：CombatDamage 先拒绝终止目标和无敌命中；合格攻击在完美窗口内被拒绝时返回一次 `PerfectDodge`。成功伤害广播 `Applied`，HitReaction 取消可中断动作并短暂硬直；Health 归零时 CombatDeath 先添加 Dead Tag，再通知宿主停止动作、窗口、恢复、AI 与移动，最后向 GameMode 报告胜负。
 
-**结算到重试**：玩家或 Boss 的首个死亡报告提交唯一 Defeat/Victory → HUD 显示结算并关闭 Gameplay 输入 → Retry 按钮经 PlayerController 请求 GameMode → GameMode 重新加载当前关卡。
+**入口到战斗**：玩家在通道自由移动 → 入口 Trigger 请求 GameMode 播放 Boss 出场序列并关闭 Gameplay 输入 → 序列结束后恢复玩家视角与输入、启动 Boss StateTree、显示 Boss 血条。
 
-**Boss 第一阶段循环**：StateTree 请求 Boss 决策；Decision Component 拍下目标距离、朝向、可用攻击及近期历史的 Snapshot。近战招式只在近战范围内候选，DashSwing 只在起冲距离和停止距离外候选；冷却中的招式被排除。组件对候选计算基础分减去距离、朝向和近期使用惩罚，按分数排序，同分由可复现的随机流打破；没有可用招式时选择接近或等待。StateTree 消费待执行 Decision；攻击前组件复核目标与距离，经 Character 依排名请求 GAS 激活，仅在请求被拒绝时尝试下一个候选；成功受理后才更新历史与冷却。DashSwing 的 Ability Task 临时提高移速并逐帧朝玩家当前位置移动，进入挥击距离后切换动画并建立 Melee 会话 → 攻击 Task 按本次请求句柄等待结果 → Recovery Task 保留无伤害间隔。树退出时 Task 先解除监听，再按句柄取消自己持有的攻击。当前只覆盖第一阶段四招，阶段状态尚未接入。
+**结算到重试**：玩家或 Boss 的首个死亡报告提交唯一 Defeat/Victory → GameMode 关闭 Gameplay 输入，HUD 显示结算 → Retry 按钮经 PlayerController 请求 GameMode → GameMode 重新加载当前关卡。
 
-**初始化到退出**：玩家随占有刷新 GAS 上下文；Boss 在进入游戏时初始化 GAS，再调用 StateTree 启动。Boss 退出先停树，再清理 GAS 上下文，使树的退出逻辑仍可使用 GAS。
+**Boss 第一阶段循环**：StateTree 请求 Boss 决策；Decision Component 拍下目标距离、朝向、可用攻击及近期历史的 Snapshot。近战招式只在近战范围内候选，DashSwing 只在最小与最大起冲距离之间且超过停止距离时进入候选；冷却中的招式被排除。组件对候选计算基础分减去距离、朝向和近期使用惩罚，按分数排序，同分由可复现的随机流打破；没有可用招式时选择接近或等待。StateTree 消费待执行 Decision；攻击前组件复核目标与距离，经 Character 依排名请求 GAS 激活，仅在请求被拒绝时尝试下一个候选；成功受理后才更新历史与冷却。DashSwing 的 Ability Task 临时提高移速并逐帧朝玩家当前位置移动，进入挥击距离后切换动画并建立 Melee 会话 → 攻击 Task 按本次请求句柄等待结果 → Recovery Task 保留无伤害间隔。树退出时 Task 先解除监听，再按句柄取消自己持有的攻击。当前只覆盖第一阶段四招，阶段状态尚未接入。
+
+**初始化到退出**：玩家随占有刷新 GAS 上下文；Boss 在进入游戏时初始化 GAS 并注册到 GameMode，入口演出结束后才启动 StateTree。Boss 退出先停树，再清理 GAS 上下文，使树的退出逻辑仍可使用 GAS。
 
 ## 详细运行时架构图
 

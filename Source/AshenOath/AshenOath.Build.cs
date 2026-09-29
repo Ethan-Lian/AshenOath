@@ -17,18 +17,21 @@ public class AshenOath : ModuleRules
 				"GameplayAbilities",
 				"GameplayTags",
 				"AshenOathCombat",
+				"Niagara",
 				"UMG"
 			}
 		);
 
-		
+
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{
 				"AIModule",
 				"GameplayTasks",
 				"StateTreeModule",
-				"GameplayStateTreeModule"
+				"GameplayStateTreeModule",
+				"LevelSequence",
+				"MovieScene"
 			}
 		);
 	}

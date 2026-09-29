@@ -20,6 +20,9 @@ struct ASHENOATH_API FAshenOathBossDecideTaskInstanceData
 
 	UPROPERTY(EditAnywhere, Category = Parameter, meta = (ClampMin = "0.0", Units = "cm"))
 	float DashMinStartRange = 500.0f;
+
+	UPROPERTY(EditAnywhere, Category = Parameter, meta = (ClampMin = "0.0", Units = "cm"))
+	float DashMaxStartRange = 1000.0f;
 };
 
 /** Chooses one approach, attack, or wait intent before the shared combat loop branches. */

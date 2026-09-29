@@ -24,22 +24,20 @@ bool AAshenOathPlayerController::RequestRetry()
 
 void AAshenOathPlayerController::SetGameplayInputEnabled(const bool bEnabled)
 {
-	if (bGameplayInputEnabled == bEnabled)
+	if (bGameplayInputEnabled != bEnabled)
 	{
-		return;
-	}
+		bGameplayInputEnabled = bEnabled;
+		CurrentMovementIntent = FVector2D::ZeroVector;
+		SetIgnoreMoveInput(!bEnabled);
+		SetIgnoreLookInput(!bEnabled);
 
-	bGameplayInputEnabled = bEnabled;
-	CurrentMovementIntent = FVector2D::ZeroVector;
-	SetIgnoreMoveInput(!bEnabled);
-	SetIgnoreLookInput(!bEnabled);
-
-	if (!bEnabled)
-	{
-		if (AAshenOathPlayerCharacter* PlayerCharacter =
-			Cast<AAshenOathPlayerCharacter>(GetPawn()))
+		if (!bEnabled)
 		{
-			PlayerCharacter->RequestClearLockOn();
+			if (AAshenOathPlayerCharacter* PlayerCharacter =
+				Cast<AAshenOathPlayerCharacter>(GetPawn()))
+			{
+				PlayerCharacter->RequestClearLockOn();
+			}
 		}
 	}
 
@@ -55,6 +53,13 @@ void AAshenOathPlayerController::SetGameplayInputEnabled(const bool bEnabled)
 		SetInputMode(FInputModeGameAndUI());
 		SetShowMouseCursor(true);
 	}
+}
+
+void AAshenOathPlayerController::EnterCinematicInputMode()
+{
+	SetGameplayInputEnabled(false);
+	SetInputMode(FInputModeGameOnly());
+	SetShowMouseCursor(false);
 }
 
 void AAshenOathPlayerController::SetupInputComponent()

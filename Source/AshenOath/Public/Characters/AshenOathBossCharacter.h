@@ -23,6 +23,7 @@ class UAshenOathBossChargedSwingAbility;
 class UAshenOathBossDashSwingAbility;
 class UCombatHitReactionComponent;
 class UCombatDeathComponent;
+class UAshenOathCombatFeedbackComponent;
 class UAshenOathBossDecisionComponent;
 class AActor;
 struct FAbilityEndedData;
@@ -94,6 +95,9 @@ public:
 
 	const UAshenOathAttributeSet* GetAttributeSet() const;
 
+	// GameMode calls this after the arena entrance sequence finishes.
+	void StartCombatLogic();
+
 	// True means GAS accepted the configured single-swing activation request.
 	bool RequestSingleSwing();
 	bool IsSingleSwingActive() const;
@@ -124,7 +128,8 @@ public:
 	bool ChooseFirstPhaseCombatIntent(
 		AActor* TargetActor,
 		float MeleeRange,
-		float DashMinStartRange
+		float DashMinStartRange,
+		float DashMaxStartRange
 	);
 
 	EAshenOathBossCombatIntent GetPendingCombatIntent();
@@ -215,6 +220,9 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AshenOath|Combat", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UCombatDeathComponent> DeathComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AshenOath|Feedback", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAshenOathCombatFeedbackComponent> CombatFeedbackComponent;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Boss")
 	TObjectPtr<UAshenOathMeleeActionData> SingleSwingAction;

@@ -3,7 +3,6 @@
 #include "Characters/AshenOathPlayerCharacter.h"
 #include "Game/AshenOathGameMode.h"
 #include "GameFramework/PlayerController.h"
-#include "Player/AshenOathPlayerController.h"
 #include "UI/AshenOathHUDRootWidget.h"
 
 void AAshenOathHUD::BeginPlay()
@@ -52,6 +51,10 @@ void AAshenOathHUD::BeginPlay()
 		this,
 		&AAshenOathHUD::HandleMatchOutcomeChanged
 	);
+	CombatStartedHandle = GameMode->OnCombatStarted().AddUObject(
+		this,
+		&AAshenOathHUD::HandleCombatStarted
+	);
 
 	// Initialize from a Boss that registered before the HUD.
 	HandleActiveBossChanged(GameMode->GetActiveBoss());
@@ -82,10 +85,16 @@ void AAshenOathHUD::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		{
 			GameMode->OnMatchOutcomeChanged().Remove(MatchOutcomeChangedHandle);
 		}
+
+		if (CombatStartedHandle.IsValid())
+		{
+			GameMode->OnCombatStarted().Remove(CombatStartedHandle);
+		}
 	}
 
 	ActiveBossChangedHandle.Reset();
 	MatchOutcomeChangedHandle.Reset();
+	CombatStartedHandle.Reset();
 	BoundGameMode.Reset();
 
 	if (RootWidget)
@@ -103,7 +112,16 @@ void AAshenOathHUD::HandleActiveBossChanged(AAshenOathBossCharacter* BossCharact
 {
 	if (RootWidget)
 	{
-		RootWidget->SetActiveBoss(BossCharacter);
+		AAshenOathGameMode* GameMode = BoundGameMode.Get();
+		RootWidget->SetActiveBoss(GameMode && GameMode->IsCombatActive() ? BossCharacter : nullptr);
+	}
+}
+
+void AAshenOathHUD::HandleCombatStarted()
+{
+	if (AAshenOathGameMode* GameMode = BoundGameMode.Get())
+	{
+		HandleActiveBossChanged(GameMode->GetActiveBoss());
 	}
 }
 
@@ -121,13 +139,5 @@ void AAshenOathHUD::HandleMatchOutcomeChanged(
 	if (RootWidget)
 	{
 		RootWidget->SetMatchOutcome(Outcome);
-	}
-
-	if (AAshenOathPlayerController* PlayerController =
-		Cast<AAshenOathPlayerController>(GetOwningPlayerController()))
-	{
-		PlayerController->SetGameplayInputEnabled(
-			Outcome == EAshenOathMatchOutcome::InProgress
-		);
 	}
 }

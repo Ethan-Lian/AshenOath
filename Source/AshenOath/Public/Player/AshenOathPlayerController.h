@@ -30,6 +30,8 @@ public:
 	// unregisters the gameplay Mapping Context and switches to a game-and-UI input
 	// mode with a visible cursor so the outcome overlay stays clickable.
 	void SetGameplayInputEnabled(bool bEnabled);
+	// Keeps gameplay input disabled without showing the outcome cursor during a sequence.
+	void EnterCinematicInputMode();
 
 protected:
 	virtual void SetupInputComponent() override;

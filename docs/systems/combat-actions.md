@@ -53,9 +53,9 @@
 
 Boss 近战复用同一执行基类。StateTree 经 Boss Character 的稳定入口调用 Decision Component 选招，再由 Character 的请求身份接口激活 GAS。请求若在 `TryActivateAbility` 内同步结束，直接返回成功或失败；仍在执行时，Task 再订阅携带请求句柄的结束事件。Task 退出先解除监听，再按句柄取消自己的攻击，因此旧请求不能取消下一招。Decision Component 保存可编辑的四招 Utility 配置、近期使用与冷却历史；Decide 拍下距离、朝向和可用攻击，筛选距离与冷却资格，再按基础分减距离、朝向、近期使用惩罚排序，同分由种子随机流决定。执行前复核目标与距离；被拒绝才尝试下一名，成功受理才记录历史。无候选时按距离接近或等待。
 
-第一阶段玩家超过默认 300 cm 近战范围时，只有超过默认 500 cm 起冲距离、DashSwing 配置与资源可用且不在冷却中，突进才进入候选；没有可用突进就正常寻路接近 300 cm。突进开始后，Ability 循环播放不含位移的 `DashSection`；追击 Task 将 `MaxWalkSpeed` 临时乘以 `DashSpeedMultiplier`，每帧按玩家实时位置向 CharacterMovement 提交移动输入并面向玩家。进入 `StopDistance` 后停止移动并恢复原移速，Ability 按玩家当前位置转向、建立 Melee 会话并跳到 `SwingSection`。突进不设最大时长或距离；目标失效、持续受阻与动作取消均结束追击，不会在射程外挥击。
+第一阶段玩家超过默认 300 cm 近战范围时，只有距离大于默认 500 cm 且不超过默认 1000 cm、DashSwing 配置与资源可用且不在冷却中，突进才进入候选；没有可用突进就正常寻路接近 300 cm。突进开始后，Ability 循环播放不含位移的 `DashSection`；追击 Task 将 `MaxWalkSpeed` 临时乘以 `DashSpeedMultiplier`，每帧按玩家实时位置向 CharacterMovement 提交移动输入并面向玩家。进入 `StopDistance` 后停止移动并恢复原移速，Ability 按玩家当前位置转向、建立 Melee 会话并跳到 `SwingSection`。起冲后的追击 Task 不设最大时长或位移距离；目标失效、持续受阻与动作取消均结束追击，不会在射程外挥击。
 
-Test 地图当前使用 Decision Component 的四招默认值；这是本轮实机流程测试所用的初始平衡值，后续手感调整可直接修改 Boss 的组件配置。四招基础分均为 `2.0`，距离权重均为 `1.0`。
+GameLevel 当前使用 Decision Component 的四招默认值；这是本轮实机流程测试所用的初始平衡值，后续手感调整可直接修改 Boss 的组件配置。四招基础分均为 `2.0`，距离权重均为 `1.0`。
 
 | 招式 | 偏好距离 | 距离衰减 | 朝向权重 | 近期使用惩罚 | 冷却 |
 |---|---:|---:|---:|---:|---:|

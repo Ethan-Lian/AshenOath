@@ -1,11 +1,15 @@
 ﻿#include "Game/AshenOathGameMode.h"
 
+#include "LevelSequenceActor.h"
+#include "LevelSequencePlayer.h"
+#include "MovieSceneSequencePlaybackSettings.h"
 #include "Characters/AshenOathBossCharacter.h"
 #include "Characters/AshenOathPlayerCharacter.h"
-#include "Player/AshenOathPlayerController.h"
-#include "UI/AshenOathHUD.h"
+#include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
+#include "Player/AshenOathPlayerController.h"
+#include "UI/AshenOathHUD.h"
 
 AAshenOathGameMode::AAshenOathGameMode()
 {
@@ -23,12 +27,11 @@ bool AAshenOathGameMode::RegisterBoss(AAshenOathBossCharacter* Boss)
 
 	AAshenOathBossCharacter* CurrentBoss = ActiveBoss.Get();
 
-
 	// Avoid duplicate Boss registration and repeated notifications to listeners.
-    if (CurrentBoss == Boss)
-    {
-        return true;
-    }
+	if (CurrentBoss == Boss)
+	{
+		return true;
+	}
 
 	// Only one active Boss is supported; report conflicting registrations in development.
 	if (!ensureMsgf(!IsValid(CurrentBoss), TEXT("AshenOath currently supports only one active boss.")))
@@ -89,6 +92,12 @@ void AAshenOathGameMode::ReportBossDeath(
 	}
 }
 
+void AAshenOathGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	ClearIntroPlayback();
+	Super::EndPlay(EndPlayReason);
+}
+
 bool AAshenOathGameMode::TryResolveMatch(
 	const EAshenOathMatchOutcome RequestedOutcome)
 {
@@ -100,6 +109,25 @@ bool AAshenOathGameMode::TryResolveMatch(
 
 	// Commit before broadcasting because listeners execute synchronously.
 	MatchOutcome = RequestedOutcome;
+	const bool bIntroWasPlaying = IntroPlayer != nullptr;
+	if (bIntroWasPlaying)
+	{
+		ClearIntroPlayback();
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		if (AAshenOathPlayerController* PlayerController =
+			Cast<AAshenOathPlayerController>(World->GetFirstPlayerController()))
+		{
+			if (bIntroWasPlaying && IsValid(PlayerController->GetPawn()))
+			{
+				PlayerController->SetViewTarget(PlayerController->GetPawn());
+			}
+			PlayerController->SetGameplayInputEnabled(false);
+		}
+	}
+
 	MatchOutcomeChangedEvent.Broadcast(MatchOutcome);
 
 	return true;
@@ -148,4 +176,121 @@ bool AAshenOathGameMode::ReloadCurrentLevel()
 
 	UGameplayStatics::OpenLevel(this, FName(*CurrentLevelName));
 	return true;
+}
+
+bool AAshenOathGameMode::TryStartBossIntro(
+	AAshenOathPlayerCharacter* EnteringPlayer)
+{
+	UWorld* World = GetWorld();
+	if (bIntroTriggered ||
+		MatchOutcome != EAshenOathMatchOutcome::InProgress ||
+		!World ||
+		!IsValid(EnteringPlayer) ||
+		EnteringPlayer->GetWorld() != World ||
+		!IsValid(ActiveBoss.Get()))
+	{
+		return false;
+	}
+
+	AAshenOathPlayerController* PlayerController =
+		Cast<AAshenOathPlayerController>(World->GetFirstPlayerController());
+
+	if (!IsValid(PlayerController) ||
+		!PlayerController->IsLocalController() ||
+		PlayerController->GetPawn() != EnteringPlayer)
+	{
+		return false;
+	}
+
+	// Claim this intro before calls that may synchronously invoke gameplay callbacks.
+	bIntroTriggered = true;
+	PlayerController->EnterCinematicInputMode();
+	EnteringPlayer->PrepareForBossIntro();
+
+	if (MatchOutcome != EAshenOathMatchOutcome::InProgress)
+	{
+		return true;
+	}
+
+	// Allow the entrance to start combat while no sequence asset is configured.
+	if (!IntroSequence)
+	{
+		BeginCombat();
+		return true;
+	}
+
+	FMovieSceneSequencePlaybackSettings PlaybackSettings;
+	ALevelSequenceActor* CreatedActor = nullptr;
+	IntroPlayer = ULevelSequencePlayer::CreateLevelSequencePlayer(
+		this, IntroSequence.Get(), PlaybackSettings, CreatedActor
+	);
+	IntroActor = CreatedActor;
+
+	if (!IntroPlayer)
+	{
+		BeginCombat();
+		return true;
+	}
+
+	IntroPlayer->OnFinished.AddDynamic(
+		this, &AAshenOathGameMode::HandleIntroFinished
+	);
+	IntroPlayer->Play();
+	return true;
+}
+
+void AAshenOathGameMode::BeginCombat()
+{
+	if (!bIntroTriggered ||
+		bCombatActive ||
+		MatchOutcome != EAshenOathMatchOutcome::InProgress)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	AAshenOathBossCharacter* Boss = ActiveBoss.Get();
+	AAshenOathPlayerController* PlayerController = World
+		? Cast<AAshenOathPlayerController>(World->GetFirstPlayerController())
+		: nullptr;
+
+	if (!IsValid(Boss) ||
+		!IsValid(PlayerController) ||
+		!IsValid(PlayerController->GetPawn()))
+	{
+		return;
+	}
+
+	ClearIntroPlayback();
+	PlayerController->SetViewTarget(PlayerController->GetPawn());
+
+	bCombatActive = true;
+	PlayerController->SetGameplayInputEnabled(true);
+	Boss->StartCombatLogic();
+
+	if (IsCombatActive())
+	{
+		CombatStartedEvent.Broadcast();
+	}
+}
+
+void AAshenOathGameMode::ClearIntroPlayback()
+{
+	if (IntroPlayer)
+	{
+		IntroPlayer->OnFinished.RemoveDynamic(this, &AAshenOathGameMode::HandleIntroFinished);
+		IntroPlayer->Stop();
+		IntroPlayer = nullptr;
+	}
+
+	if (IsValid(IntroActor))
+	{
+		IntroActor->Destroy();
+	}
+	IntroActor = nullptr;
+}
+
+void AAshenOathGameMode::HandleIntroFinished()
+{
+	BeginCombat();
 }

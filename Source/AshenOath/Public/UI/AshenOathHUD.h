@@ -28,6 +28,7 @@ protected:
 
 private:
 	void HandleActiveBossChanged(AAshenOathBossCharacter* BossCharacter);
+	void HandleCombatStarted();
 
 	void HandleActivePlayer(APawn* NewPawn);
 	void HandleMatchOutcomeChanged(EAshenOathMatchOutcome Outcome);
@@ -46,6 +47,7 @@ private:
 
 	FDelegateHandle ActiveBossChangedHandle;
 	FDelegateHandle MatchOutcomeChangedHandle;
+	FDelegateHandle CombatStartedHandle;
 
 	FDelegateHandle ActivePlayerHandle;
 };

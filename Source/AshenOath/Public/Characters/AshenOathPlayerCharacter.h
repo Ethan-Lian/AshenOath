@@ -28,6 +28,7 @@ class UAshenOathDodgeAbility;
 class UAshenOathStaminaRecoveryComponent;
 class UCombatHitReactionComponent;
 class UCombatDeathComponent;
+class UAshenOathCombatFeedbackComponent;
 class UCombatTargetingComponent;
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnAshenOathHealUsesChanged, int32);
@@ -75,6 +76,9 @@ public:
 
 	// Clears the current lock target, if any.
 	void RequestClearLockOn();
+
+	// Stops any current action and movement before the entrance sequence takes control.
+	void PrepareForBossIntro();
 
 	// Returns whether a valid lock target is currently owned.
 	bool IsLockedOn() const;
@@ -125,6 +129,10 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AshenOath|Combat",
 		meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UCombatDeathComponent> DeathComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AshenOath|Feedback",
+		meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAshenOathCombatFeedbackComponent> CombatFeedbackComponent;
 
 	// Immutable configuration supplied to the granted combo-attack AbilitySpec.
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat")

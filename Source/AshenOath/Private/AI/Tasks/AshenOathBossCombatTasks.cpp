@@ -58,7 +58,8 @@ EStateTreeRunStatus FAshenOathBossDecideTask::EnterState(
 	return Boss->ChooseFirstPhaseCombatIntent(
 		Target,
 		InstanceData.MeleeRange,
-		InstanceData.DashMinStartRange)
+		InstanceData.DashMinStartRange,
+		InstanceData.DashMaxStartRange)
 		? EStateTreeRunStatus::Succeeded
 		: EStateTreeRunStatus::Failed;
 }

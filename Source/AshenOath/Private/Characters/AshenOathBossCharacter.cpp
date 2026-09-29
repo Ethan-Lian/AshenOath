@@ -15,6 +15,7 @@
 #include "Actions/CombatMeleeComponent.h"
 #include "Reaction/CombatHitReactionComponent.h"
 #include "Death/CombatDeathComponent.h"
+#include "Feedback/AshenOathCombatFeedbackComponent.h"
 #include "Components/StateTreeComponent.h"
 #include "Damage/CombatDamageComponent.h"
 #include "Game/AshenOathGameMode.h"
@@ -51,6 +52,9 @@ AAshenOathBossCharacter::AAshenOathBossCharacter()
 	DeathComponent->ConfigureDeathContract(
 		UAshenOathAttributeSet::GetHealthAttribute(),
 		AshenOathGameplayTags::State_Dead
+	);
+	CombatFeedbackComponent = CreateDefaultSubobject<UAshenOathCombatFeedbackComponent>(
+		TEXT("CombatFeedbackComponent")
 	);
 
 	SingleSwingAbilityClass = UAshenOathBossSingleSwingAbility::StaticClass();
@@ -110,6 +114,24 @@ void AAshenOathBossCharacter::BeginPlay()
 	{
 		return;
 	}
+}
+
+void AAshenOathBossCharacter::StartCombatLogic()
+{
+	UWorld* World = GetWorld();
+	AAshenOathGameMode* GameMode = World
+		? World->GetAuthGameMode<AAshenOathGameMode>()
+		: nullptr;
+
+	if (!GameMode ||
+		GameMode->GetActiveBoss() != this ||
+		!GameMode->IsCombatActive() ||
+		DeathComponent->IsDeathStarted() ||
+		StateTreeComponent->IsRunning())
+	{
+		return;
+	}
+
 	StateTreeComponent->StartLogic();
 }
 
@@ -475,10 +497,11 @@ FAshenOathBossAttackStartResult AAshenOathBossCharacter::ResolveBossAttackStart(
 bool AAshenOathBossCharacter::ChooseFirstPhaseCombatIntent(
 	AActor* TargetActor,
 	const float MeleeRange,
-	const float DashMinStartRange)
+	const float DashMinStartRange,
+	const float DashMaxStartRange)
 {
 	return DecisionComponent->ChooseFirstPhaseCombatIntent(
-		TargetActor, MeleeRange, DashMinStartRange);
+		TargetActor, MeleeRange, DashMinStartRange, DashMaxStartRange);
 }
 
 EAshenOathBossCombatIntent AAshenOathBossCharacter::GetPendingCombatIntent()

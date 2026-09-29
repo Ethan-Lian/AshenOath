@@ -21,6 +21,7 @@
 #include "AbilitySystem/Ability/AshenOathHealAbility.h"
 #include "Reaction/CombatHitReactionComponent.h"
 #include "Death/CombatDeathComponent.h"
+#include "Feedback/AshenOathCombatFeedbackComponent.h"
 #include "GameplayAbilitySpec.h"
 #include "Characters/AshenOathBossCharacter.h"
 #include "Game/AshenOathGameMode.h"
@@ -56,12 +57,8 @@ AAshenOathPlayerCharacter::AAshenOathPlayerCharacter()
 	CombatMeleeComponent = CreateDefaultSubobject<UCombatMeleeComponent>(TEXT("CombatMeleeComponent"));
 	CombatDamageComponent = CreateDefaultSubobject<UCombatDamageComponent>(TEXT("CombatDamageComponent"));
 	CombatDefenseComponent = CreateDefaultSubobject<UCombatDefenseComponent>(TEXT("CombatDefenseComponent"));
-	StaminaRecoveryComponent = CreateDefaultSubobject<UAshenOathStaminaRecoveryComponent>(
-		TEXT("StaminaRecoveryComponent")
-	);
-	HitReactionComponent = CreateDefaultSubobject<UCombatHitReactionComponent>(
-		TEXT("HitReactionComponent")
-	);
+	StaminaRecoveryComponent = CreateDefaultSubobject<UAshenOathStaminaRecoveryComponent>(TEXT("StaminaRecoveryComponent"));
+	HitReactionComponent = CreateDefaultSubobject<UCombatHitReactionComponent>(TEXT("HitReactionComponent"));
 	HitReactionComponent->ConfigureGameplayTags(
 		AshenOathGameplayTags::State_Staggered,
 		AshenOathGameplayTags::State_Dead,
@@ -73,6 +70,9 @@ AAshenOathPlayerCharacter::AAshenOathPlayerCharacter()
 	DeathComponent->ConfigureDeathContract(
 		UAshenOathAttributeSet::GetHealthAttribute(),
 		AshenOathGameplayTags::State_Dead
+	);
+	CombatFeedbackComponent = CreateDefaultSubobject<UAshenOathCombatFeedbackComponent>(
+		TEXT("CombatFeedbackComponent")
 	);
 
 	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
@@ -544,7 +544,8 @@ bool AAshenOathPlayerCharacter::RequestToggleLockOn()
 		? World->GetAuthGameMode<AAshenOathGameMode>()
 		: nullptr;
 
-	return GameMode && CombatTargetingComponent->TrySetTarget(GameMode->GetActiveBoss());
+	return GameMode && GameMode->IsCombatActive() &&
+		CombatTargetingComponent->TrySetTarget(GameMode->GetActiveBoss());
 }
 
 void AAshenOathPlayerCharacter::RequestClearLockOn()
@@ -552,6 +553,16 @@ void AAshenOathPlayerCharacter::RequestClearLockOn()
 	if (CombatTargetingComponent)
 	{
 		CombatTargetingComponent->ClearTarget();
+	}
+}
+
+void AAshenOathPlayerCharacter::PrepareForBossIntro()
+{
+	CancelCombatAbilities();
+
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->StopMovementImmediately();
 	}
 }
 
@@ -663,11 +674,6 @@ void AAshenOathPlayerCharacter::UpdateLockedView(const float DeltaSeconds)
 
 void AAshenOathPlayerCharacter::RefreshFacingMode()
 {
-	// arbitrate the three owners.
-	// Free movement: orient to movement.
-	// Lock-on: use controller desired rotation.
-	// State.MovementLocked/State.Staggered/State.Dead: neither system may keep
-	// rotating the Character.
 
 	UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
 

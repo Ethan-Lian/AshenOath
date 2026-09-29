@@ -99,7 +99,11 @@ FAshenOathBossScoredAttack UAshenOathBossDecisionComponent::ScoreAttack(
 	return Result;
 }
 
-void UAshenOathBossDecisionComponent::BuildRankedAttacks(const FAshenOathBossCombatSnapshot& Snapshot, float MeleeRange, float DashMinStartRange,
+void UAshenOathBossDecisionComponent::BuildRankedAttacks(
+	const FAshenOathBossCombatSnapshot& Snapshot,
+	float MeleeRange,
+	float DashMinStartRange,
+	float DashMaxStartRange,
 	TArray<FAshenOathBossScoredAttack, TInlineAllocator<4>>& OutRanked)
 {
 	OutRanked.Reset();
@@ -112,6 +116,7 @@ void UAshenOathBossDecisionComponent::BuildRankedAttacks(const FAshenOathBossCom
 		if (bDash)
 		{
 			if (Snapshot.Distance2D <= DashMinStartRange ||
+				Snapshot.Distance2D > DashMaxStartRange ||
 				!IsValid(Boss->DashSwingAction) ||
 				Snapshot.Distance2D <=
 					Boss->DashSwingAction->StopDistance + KINDA_SMALL_NUMBER)
@@ -187,11 +192,13 @@ void UAshenOathBossDecisionComponent::RecordAcceptedAttack(EAshenOathBossAttackT
 bool UAshenOathBossDecisionComponent::ChooseFirstPhaseCombatIntent(
 	AActor* TargetActor,
 	const float MeleeRange,
-	const float DashMinStartRange)
+	const float DashMinStartRange,
+	const float DashMaxStartRange)
 {
 	PendingCombatDecision = {};
 	if (!FMath::IsFinite(MeleeRange) || !FMath::IsFinite(DashMinStartRange) ||
-		MeleeRange < 0.0f || DashMinStartRange < MeleeRange)
+		!FMath::IsFinite(DashMaxStartRange) || MeleeRange < 0.0f ||
+		DashMinStartRange < MeleeRange || DashMaxStartRange <= DashMinStartRange)
 	{
 		return false;
 	}
@@ -206,7 +213,9 @@ bool UAshenOathBossDecisionComponent::ChooseFirstPhaseCombatIntent(
 	Decision.TargetActor = Snapshot.TargetActor;
 	Decision.MeleeRange = MeleeRange;
 	Decision.DashMinStartRange = DashMinStartRange;
-	BuildRankedAttacks(Snapshot, MeleeRange, DashMinStartRange, Decision.RankedAttacks);
+	Decision.DashMaxStartRange = DashMaxStartRange;
+	BuildRankedAttacks(
+		Snapshot, MeleeRange, DashMinStartRange, DashMaxStartRange, Decision.RankedAttacks);
 	if (!Decision.RankedAttacks.IsEmpty())
 	{
 		Decision.Intent = EAshenOathBossCombatIntent::Attack;
@@ -371,6 +380,7 @@ FAshenOathBossAttackStartResult UAshenOathBossDecisionComponent::RequestSelected
 		if (Candidate.AttackType == EAshenOathBossAttackType::DashSwing)
 		{
 			if (CurrentDistance <= Decision.DashMinStartRange ||
+				CurrentDistance > Decision.DashMaxStartRange ||
 				!IsValid(Boss->DashSwingAction) ||
 				CurrentDistance <= Boss->DashSwingAction->StopDistance + KINDA_SMALL_NUMBER)
 			{

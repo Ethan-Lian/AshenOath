@@ -7,6 +7,9 @@
 class AAshenOathBossCharacter;
 class AAshenOathPlayerCharacter;
 class APlayerController;
+class ULevelSequence;
+class ULevelSequencePlayer;
+class ALevelSequenceActor;
 
 UENUM(BlueprintType)
 enum class EAshenOathMatchOutcome : uint8
@@ -30,6 +33,7 @@ public:
 
 	DECLARE_EVENT_OneParam(AAshenOathGameMode, FActiveBossChangedEvent, AAshenOathBossCharacter*);
 	DECLARE_EVENT_OneParam(AAshenOathGameMode, FMatchOutcomeChangedEvent, EAshenOathMatchOutcome);
+	DECLARE_EVENT(AAshenOathGameMode, FCombatStartedEvent);
 
 	// Registers a Boss after its gameplay setup and attributes are ready,
 	// then notifies subscribers that it has become the active Boss.
@@ -59,6 +63,23 @@ public:
 		return MatchOutcomeChangedEvent;
 	}
 
+	FCombatStartedEvent& OnCombatStarted()
+	{
+		return CombatStartedEvent;
+	}
+
+	// Called by the arena entrance trigger for the currently controlled player.
+	UFUNCTION(BlueprintCallable, Category = "AshenOath|Intro")
+	bool TryStartBossIntro(AAshenOathPlayerCharacter* EnteringPlayer);
+
+	bool IsCombatActive() const
+	{
+		return bCombatActive && MatchOutcome == EAshenOathMatchOutcome::InProgress;
+	}
+
+protected:
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
 private:
 	bool TryResolveMatch(EAshenOathMatchOutcome RequestedOutcome);
 	bool ReloadCurrentLevel();
@@ -68,9 +89,30 @@ private:
 
 	FActiveBossChangedEvent ActiveBossChangedEvent;
 	FMatchOutcomeChangedEvent MatchOutcomeChangedEvent;
+	FCombatStartedEvent CombatStartedEvent;
 
 	// The first valid terminal report wins and is never overwritten.
 	EAshenOathMatchOutcome MatchOutcome = EAshenOathMatchOutcome::InProgress;
 
 	bool bRetryRequested = false;
+
+	void BeginCombat();
+
+	void ClearIntroPlayback();
+
+	UFUNCTION()
+	void HandleIntroFinished();
+
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Intro")
+	TObjectPtr<ULevelSequence> IntroSequence;
+
+	UPROPERTY(Transient)
+	TObjectPtr<ULevelSequencePlayer> IntroPlayer;
+
+	UPROPERTY(Transient)
+	TObjectPtr<ALevelSequenceActor> IntroActor;
+
+	bool bIntroTriggered = false;
+
+	bool bCombatActive = false;
 };

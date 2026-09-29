@@ -50,6 +50,7 @@ struct FAshenOathBossCombatDecision
 	float ApproachRange = 0.0f;
 	float MeleeRange = 0.0f;
 	float DashMinStartRange = 0.0f;
+	float DashMaxStartRange = 0.0f;
 	TArray<FAshenOathBossScoredAttack, TInlineAllocator<4>> RankedAttacks;
 };
 
@@ -79,7 +80,8 @@ public:
 	bool ChooseFirstPhaseCombatIntent(
 		AActor* TargetActor,
 		float MeleeRange,
-		float DashMinStartRange
+		float DashMinStartRange,
+		float DashMaxStartRange
 	);
 
 	EAshenOathBossCombatIntent GetPendingCombatIntent();
@@ -116,6 +118,7 @@ private:
 		const FAshenOathBossCombatSnapshot& Snapshot,
 		float MeleeRange,
 		float DashMinStartRange,
+		float DashMaxStartRange,
 		TArray<FAshenOathBossScoredAttack, TInlineAllocator<4>>& OutRanked
 	);
 

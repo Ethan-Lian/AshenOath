@@ -51,6 +51,7 @@ BeginPlay
   → 授予单次挥击及其他已配置 ActionData 的 Boss 近战 Ability
   → 初始化 Death 的 Health 观察并绑定 DeathStarted
   → 注册到 GameMode
+GameMode 在入口演出结束后调用 Boss.StartCombatLogic()
   → StateTreeComponent.StartLogic()
 EndPlay
   → StateTreeComponent.StopLogic()
@@ -58,7 +59,7 @@ EndPlay
   → ASC.ClearActorInfo()
 ```
 
-StateTree 关闭自动启动，由 Boss 显式控制顺序：初始属性、必需的单次挥击配置和 GameMode 注册成功后才启动；其余三招仅在各自 ActionData 配置后授予。退出时先停树，使活动 Task 先解除监听并按请求句柄取消自己的攻击，再清理 ASC。Boss 在激活前记录请求归属；同步完成直接随返回值交付，异步结束才按请求句柄广播。近期使用与冷却历史保存在随 Boss 存续的 Decision Component 中，避免 StateTree 离开攻击 State 后重建 Task 数据时重置。
+StateTree 关闭自动启动，由 Boss 显式控制顺序：初始属性、必需的单次挥击配置和 GameMode 注册成功后等待入口演出结束才启动；其余三招仅在各自 ActionData 配置后授予。退出时先停树，使活动 Task 先解除监听并按请求句柄取消自己的攻击，再清理 ASC。Boss 在激活前记录请求归属；同步完成直接随返回值交付，异步结束才按请求句柄广播。近期使用与冷却历史保存在随 Boss 存续的 Decision Component 中，避免 StateTree 离开攻击 State 后重建 Task 数据时重置。
 
 ### 初始 Effect 的应用
 
