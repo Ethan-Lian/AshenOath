@@ -12,7 +12,7 @@ class ASHENOATH_API UAshenOathHeavyAttackData : public UAshenOathMeleeActionData
 
 public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Heavy Attack|Charge",
-		meta = (ClampMin = "0.01", Units = "s"))
+		meta = (ClampMin = "1.0", Units = "s"))
 	float MaxChargeDurationSeconds = 5.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Heavy Attack|Charge",

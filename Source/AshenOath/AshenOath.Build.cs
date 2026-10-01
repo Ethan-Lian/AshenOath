@@ -17,7 +17,6 @@ public class AshenOath : ModuleRules
 				"GameplayAbilities",
 				"GameplayTags",
 				"AshenOathCombat",
-				"Niagara",
 				"UMG"
 			}
 		);

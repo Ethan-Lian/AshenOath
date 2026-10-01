@@ -16,6 +16,22 @@ UAshenOathComboAttackAbility::UAshenOathComboAttackAbility()
 	ActivationOwnedTags.AddTag(AshenOathGameplayTags::State_MovementLocked);
 }
 
+bool UAshenOathComboAttackAbility::HandleInputPressed()
+{
+	if (!IsActive())
+	{
+		return false;
+	}
+	bComboInputHeld = true;
+	TryQueueComboInput();
+	return true;
+}
+
+void UAshenOathComboAttackAbility::HandleInputReleased()
+{
+	bComboInputHeld = false;
+}
+
 bool UAshenOathComboAttackAbility::TryQueueComboInput()
 {
 	if (!IsActive() || !bComboWindowOpen || bComboInputConsumedInWindow ||
@@ -89,6 +105,10 @@ void UAshenOathComboAttackAbility::BeginComboWindowFromAnimation(
 	ActiveComboWindowNotifyInstanceId = NotifyInstanceId;
 	bComboWindowOpen = true;
 	bComboInputConsumedInWindow = false;
+	if (bComboInputHeld)
+	{
+		TryQueueComboInput();
+	}
 }
 
 void UAshenOathComboAttackAbility::EndComboWindowFromAnimation(
@@ -222,7 +242,7 @@ bool UAshenOathComboAttackAbility::StartComboExecution(
 	}
 
 	// Continuation is opt-in. Asset links cannot advance the chain unless a
-	// matching Combo Window consumes a repeated combo-attack input.
+	// matching Combo Window consumes a press or the held combo-attack input.
 	for (const FName SectionName : ActiveComboSections)
 	{
 		AnimInstance->Montage_SetNextSection(SectionName, NAME_None, Montage);
@@ -239,6 +259,7 @@ bool UAshenOathComboAttackAbility::StartComboExecution(
 
 void UAshenOathComboAttackAbility::ResetComboState()
 {
+	bComboInputHeld = false;
 	ActiveComboSections.Reset();
 	ActiveComboWindowNotifyInstanceId = INDEX_NONE;
 	bComboWindowOpen = false;

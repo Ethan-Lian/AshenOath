@@ -54,6 +54,9 @@ public:
 	// True means GAS accepted the activation request. It does not mean the
 	// animation/cost/damage transaction has already completed.
 	bool RequestComboAttack();
+	// Device press/release supports both taps and holding through Combo Windows.
+	bool RequestComboAttackPressed();
+	void RequestComboAttackReleased();
 
 	// Press starts the tap-or-hold decision; release resolves the active Heavy
 	// Ability without exposing its internal phase to the Controller.

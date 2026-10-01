@@ -133,6 +133,7 @@ public:
 	);
 
 	EAshenOathBossCombatIntent GetPendingCombatIntent();
+	bool ReconsiderCombatIntent();
 	void ClearPendingCombatDecision();
 	bool IsCurrentCombatTarget(const AActor* TargetActor) const;
 

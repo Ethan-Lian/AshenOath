@@ -137,6 +137,7 @@ void AAshenOathBossCharacter::StartCombatLogic()
 
 void AAshenOathBossCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	DecisionComponent->ClearPendingCombatDecision();
 	if (DeathComponent && DeathStartedHandle.IsValid())
 	{
 		DeathComponent->OnDeathStarted().Remove(DeathStartedHandle);
@@ -334,6 +335,7 @@ void AAshenOathBossCharacter::HandleAbilityEnded(const FAbilityEndedData& EndedD
 
 void AAshenOathBossCharacter::HandleDeathStarted()
 {
+	DecisionComponent->ClearPendingCombatDecision();
 	if (StateTreeComponent)
 	{
 		StateTreeComponent->StopLogic(TEXT("Boss died"));
@@ -507,6 +509,11 @@ bool AAshenOathBossCharacter::ChooseFirstPhaseCombatIntent(
 EAshenOathBossCombatIntent AAshenOathBossCharacter::GetPendingCombatIntent()
 {
 	return DecisionComponent->GetPendingCombatIntent();
+}
+
+bool AAshenOathBossCharacter::ReconsiderCombatIntent()
+{
+	return DecisionComponent->ReconsiderCombatIntent();
 }
 
 void AAshenOathBossCharacter::ClearPendingCombatDecision()

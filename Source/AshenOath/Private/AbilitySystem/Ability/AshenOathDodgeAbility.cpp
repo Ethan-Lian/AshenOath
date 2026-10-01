@@ -215,9 +215,7 @@ bool UAshenOathDodgeAbility::StartDefenseWindow(
 		ActionData->WindowTags,
 		ActionData->WindowStartTime,
 		ActionData->WindowDuration,
-		OutExecutionStartWorldTime,
-		ActionData->PerfectDodgeWindowStartTime,
-		ActionData->PerfectDodgeWindowDuration
+		OutExecutionStartWorldTime
 	);
 
 	const FCombatDefenseWindowHandle Window = ActiveDefenseWindow;
@@ -356,8 +354,6 @@ bool UAshenOathDodgeAbility::IsActionDataReady(
 	const bool bWindowReady =
 		ActionData->WindowStartTime >= 0.0f &&
 		ActionData->WindowDuration > KINDA_SMALL_NUMBER &&
-		ActionData->PerfectDodgeWindowStartTime >= 0.0f &&
-		ActionData->PerfectDodgeWindowDuration >= 0.0f &&
 		ActionData->WindowTags.HasTagExact(
 			AshenOathGameplayTags::State_Invulnerable);
 	const bool bAnimationSourceReady = ActorInfo->GetAnimInstance() &&
@@ -379,9 +375,7 @@ bool UAshenOathDodgeAbility::IsActionDataReady(
 	return Defense && Defense->CanBeginDodgeWindow(
 		ActionData->WindowTags,
 		ActionData->WindowStartTime,
-		ActionData->WindowDuration,
-		ActionData->PerfectDodgeWindowStartTime,
-		ActionData->PerfectDodgeWindowDuration
+		ActionData->WindowDuration
 	);
 }
 

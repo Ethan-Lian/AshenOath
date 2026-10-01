@@ -4,7 +4,7 @@
 #include "Death/CombatDeathComponent.h"
 #include "GameFramework/Actor.h"
 #include "Kismet/GameplayStatics.h"
-#include "NiagaraFunctionLibrary.h"
+#include "Particles/ParticleSystem.h"
 
 UAshenOathCombatFeedbackComponent::UAshenOathCombatFeedbackComponent()
 {
@@ -79,22 +79,8 @@ void UAshenOathCombatFeedbackComponent::HandleDamageResolved(
 		return;
 	}
 
-	USoundBase* Sound = nullptr;
-	UNiagaraSystem* Effect = nullptr;
-
-	switch (Result)
+	if (Result != ECombatDamageResult::Applied)
 	{
-	case ECombatDamageResult::Applied:
-		Sound = HitSound.Get();
-		Effect = HitEffect.Get();
-		break;
-
-	case ECombatDamageResult::PerfectDodge:
-		Sound = PerfectDodgeSound.Get();
-		Effect = PerfectDodgeEffect.Get();
-		break;
-
-	default:
 		return;
 	}
 
@@ -103,14 +89,14 @@ void UAshenOathCombatFeedbackComponent::HandleDamageResolved(
 
 	Owner->GetActorBounds(true, Location, Extent);
 
-	if (IsValid(Sound))
+	if (IsValid(HitSound))
 	{
-		UGameplayStatics::PlaySoundAtLocation(this, Sound, Location);
+		UGameplayStatics::PlaySoundAtLocation(this, HitSound.Get(), Location);
 	}
 
-	if (IsValid(Effect))
+	if (IsValid(HitEffect))
 	{
-		UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, Effect, Location);
+		UGameplayStatics::SpawnEmitterAtLocation(this, HitEffect.Get(), Location);
 	}
 }
 
@@ -134,6 +120,6 @@ void UAshenOathCombatFeedbackComponent::HandleDeathStarted()
 
 	if (IsValid(DeathEffect))
 	{
-		UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, DeathEffect.Get(), Location);
+		UGameplayStatics::SpawnEmitterAtLocation(this, DeathEffect.Get(), Location);
 	}
 }

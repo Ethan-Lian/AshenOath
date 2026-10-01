@@ -6,7 +6,7 @@
 
 class UCombatDamageComponent;
 class UCombatDeathComponent;
-class UNiagaraSystem;
+class UParticleSystem;
 class USoundBase;
 struct FCombatDamageAttempt;
 enum class ECombatDamageResult : uint8;
@@ -32,19 +32,13 @@ private:
 	TObjectPtr<USoundBase> HitSound;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Feedback|Hit")
-	TObjectPtr<UNiagaraSystem> HitEffect;
-
-	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Feedback|Perfect Dodge")
-	TObjectPtr<USoundBase> PerfectDodgeSound;
-
-	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Feedback|Perfect Dodge")
-	TObjectPtr<UNiagaraSystem> PerfectDodgeEffect;
+	TObjectPtr<UParticleSystem> HitEffect;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Feedback|Death")
 	TObjectPtr<USoundBase> DeathSound;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Feedback|Death")
-	TObjectPtr<UNiagaraSystem> DeathEffect;
+	TObjectPtr<UParticleSystem> DeathEffect;
 
 	TWeakObjectPtr<UCombatDamageComponent> BoundDamageComponent;
 	TWeakObjectPtr<UCombatDeathComponent> BoundDeathComponent;

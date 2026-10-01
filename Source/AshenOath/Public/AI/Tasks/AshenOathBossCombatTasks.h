@@ -91,6 +91,9 @@ struct ASHENOATH_API FAshenOathBossApproachTaskInstanceData
 
 	UPROPERTY(Transient)
 	float EffectiveRange = 0.0f;
+
+	UPROPERTY(Transient)
+	float ReconsiderElapsed = 0.0f;
 };
 
 /** Moves the Boss into its configured first-phase attack range. */
@@ -120,6 +123,34 @@ struct ASHENOATH_API FAshenOathBossApproachTask : public FStateTreeTaskCommonBas
 		FStateTreeExecutionContext& Context,
 		const FStateTreeTransitionResult& Transition
 	) const override;
+};
+
+USTRUCT()
+struct ASHENOATH_API FAshenOathBossObserveTaskInstanceData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, Category = Parameter, meta = (ClampMin = "0.0", Units = "deg/s"))
+	float TurnSpeed = 180.0f;
+
+	UPROPERTY(Transient)
+	TObjectPtr<AAshenOathBossCharacter> Boss;
+
+	UPROPERTY(Transient)
+	float ReconsiderElapsed = 0.0f;
+};
+
+/** Observes and turns without attacking; periodically asks the shared decision component to reconsider. */
+USTRUCT(meta = (DisplayName = "Boss Observe Player", Category = "AshenOath|Boss"))
+struct ASHENOATH_API FAshenOathBossObserveTask : public FStateTreeTaskCommonBase
+{
+	GENERATED_BODY()
+	using FInstanceDataType = FAshenOathBossObserveTaskInstanceData;
+	virtual const UStruct* GetInstanceDataType() const override { return FInstanceDataType::StaticStruct(); }
+	virtual EStateTreeRunStatus EnterState(
+		FStateTreeExecutionContext& Context, const FStateTreeTransitionResult& Transition) const override;
+	virtual EStateTreeRunStatus Tick(FStateTreeExecutionContext& Context, float DeltaTime) const override;
+	virtual void ExitState(FStateTreeExecutionContext& Context, const FStateTreeTransitionResult& Transition) const override;
 };
 
 USTRUCT()

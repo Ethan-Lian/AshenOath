@@ -167,7 +167,8 @@ bool FAshenOathBossSingleSwingAbilityLifecycleTest::RunTest(const FString& Param
 		Mesh,
 		ActionData->Montage,
 		MontageInstance->GetInstanceID(),
-		NotifyInstanceId
+		NotifyInstanceId,
+		true
 	);
 	TestTrue(TEXT("A matching animation signal opens the Boss hit window"),
 		Melee->HasActiveHitWindow());

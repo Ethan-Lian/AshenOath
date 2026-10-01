@@ -41,7 +41,7 @@ flowchart TD
     P -->|初始化 / 读取状态 Tag| GAS
     B[Boss Character] -->|初始化| BGAS[Boss ASC / AttributeSet]
     B -->|显式 StartLogic / StopLogic| ST[StateTree Component]
-    ST -->|决策 / 接近 / 攻击 / 恢复| B
+    ST -->|决策 / 接近 / 观察 / 攻击 / 恢复| B
     B -->|第一阶段选招与待执行决定| BD[Boss Decision Component]
     BD -->|可用性查询 / 攻击请求| B
     BGAS --> BATTACK[Boss 近战 GameplayAbilities]
@@ -54,11 +54,11 @@ flowchart TD
 | PlayerController | InputComponent 绑定、Mapping Context 注册、最近移动意图和重试转发 | 每次输入取当前 Pawn；由 GameMode 在演出、战斗和结算时切换输入模式，不自行决定胜负 |
 | Player Character | ASC、AttributeSet、镜头和 Combat 组件；使用继承的 CharacterMovement | 验证角色状态、选择玩家动作数据，将相对视角意图转为世界方向；不直接写战斗数值 |
 | Boss Character | ASC、AttributeSet、StateTreeComponent、四类近战 AbilitySpec 与请求身份 | 协调初始化和退出顺序；向 StateTree 提供稳定入口，负责 GAS 攻击请求与取消 |
-| Boss Decision Component | 一次决策的 Snapshot、待执行 Decision、Utility 配置、随机流及近期使用与冷却历史 | 在 StateTree 决策时检查目标与攻击可用性，给合格招式评分并选择接近、攻击或等待；执行前复核目标与距离，再向 Character 请求攻击 |
+| Boss Decision Component | 一次决策的 Snapshot、待执行 Decision、Utility 配置、Pressure 预算与喘息锁存、随机流及近期使用与冷却历史 | 预算耗尽后必须观察至下阈值；允许进攻时按距离、朝向与历史选择合格招式；执行前复核目标与距离，再向 Character 请求攻击 |
 | AttributeSet | Health、MaxHealth、Stamina、MaxStamina | 只维护数值范围；Death 组件观察 Health 并拥有终止转换 |
 | Combat GameplayAbility 基类 | 动作互斥、ActionData Cost 检查/应用与成功消耗通知 | 只共享 GAS 事务，不编排具体攻击或闪避 |
 | MeleeAttack GameplayAbility 基类 | 玩家与 Boss 近战共用的 Montage Task、Cost 提交、动画来源身份、Melee 会话和清理 | 不决定具体输入语义、连招规则、蓄力阶段或 Boss 选招；结束、中断、失败统一经 `EndAbility` 释放会话 |
-| ComboAttack GameplayAbility | 轻击连招激活、Combo Window 输入消费及 Montage Section 推进 | 直接作为轻击 Ability 授予；只有所属动画窗口接受的重复输入才能推进下一段 |
+| ComboAttack GameplayAbility | 轻击连招激活、按住状态、Combo Window 输入消费及 Montage Section 推进 | 直接作为轻击 Ability 授予；所属动画窗口接受再次点按或仍按住的输入后推进下一段，每个窗口最多消费一次 |
 | HeavyAttack GameplayAbility | 按下、蓄力消耗、松开/满蓄释放及伤害倍率 | 与 Combo 并列复用 MeleeAttack 生命周期，不继承连招状态 |
 | BossSingleSwing GameplayAbility | 校验单次挥击配置并启动近战执行 | 复用 MeleeAttack 生命周期，不单独管理 Montage Task 或 Melee 会话 |
 | BossCombo / ChargedSwing / DashSwing GameplayAbility | 分别编排连续挥击、定时蓄力释放、加速追击后挥击 | 共用 MeleeAttack 生命周期；追击进入挥击距离后才建立伤害会话，全部取消路径由 GAS 清理 |
@@ -66,11 +66,11 @@ flowchart TD
 | Heal GameplayAbility | 一次原地治疗的 Montage、完成 Notify 与 Effect 提交 | 执行期间持有 `State.MovementLocked`；Notify 前中断不回血、不消耗次数 |
 | CombatMovement AbilityTask | 一次代码位移的时间进度、MovementMode 与 RootMotionMode 接管 | Sweep 受阻自然截断；完成、取消和失败均恢复接管状态 |
 | DodgeFacingRecovery AbilityTask | 在闪避末段按实时目标方位把角色从位移朝向平滑带回锁定朝向 | 位于项目模块，只读取通用 Targeting 提供的目标 Actor；不进入 Combat 模块 |
-| CombatDefense | 普通/完美闪避窗口、来源句柄和自己施加的 loose Tag | 完美窗口必须是普通窗口的真子集且一次闪避最多消费一次；死亡时可整体复位 |
+| CombatDefense | 闪避无敌窗口、来源句柄和自己施加的 loose Tag | 按命中时刻查询窗口；死亡时可整体复位 |
 | StaminaRecovery | 延迟计时器及自己施加的周期恢复 Effect | 跨越多次动作；只有成功消耗重启，死亡和退出停止 |
 | CombatMelee | 伤害配置快照、播放来源身份、武器扫掠、Notify 窗口和窗口内去重 | 不查找当前 Ability；只接受所属 Mesh、AnimInstance、Montage 实例的信号并提交中立伤害尝试 |
-| CombatDamage | 目标侧伤害入口、终止状态拒绝、无敌判定和结果广播 | 区分普通/完美闪避与其他无敌，通过源/目标 ASC 应用伤害 Effect |
-| CombatHitReaction | 监听目标侧 Applied 结果，拥有短硬直 Tag、计时器和基础受击 Montage | 项目模块注入 Tag；终止状态不再启动受击，死亡可同步复位其状态 |
+| CombatDamage | 目标侧伤害入口、终止状态拒绝、无敌判定和结果广播 | 区分闪避无敌与其他来源无敌，通过源/目标 ASC 应用伤害 Effect |
+| CombatHitReaction | 监听目标侧具有受击资格的 Applied 结果，拥有短硬直 Tag、计时器和基础受击 Montage | 项目模块注入 Tag；终止状态不再启动受击，死亡可同步复位其状态 |
 | CombatDeath | 观察注入的 Health 属性，拥有一次性 Dead Tag、死亡事件和基础 Montage | 先建立终止状态，再广播给宿主清理并播放死亡表现；不引用具体角色或 GameMode |
 | HUD / Outcome Widget | 观察玩家 Health、Stamina、剩余治疗次数和 GameMode 胜负 | UI 不决定治疗是否可用；Retry 按钮只向 Controller 转发请求 |
 | AnimInstance | 本实例的移动表现数据；对 Character/Movement 的弱引用缓存 | 读取实际移动结果，不拥有 Gameplay 动作状态 |
@@ -89,7 +89,7 @@ flowchart TD
 
 **治疗到 UI**：Heal Input → Character 请求 Heal Ability → GAS 持有移动锁并播放 Cast Montage → 所属完成 Notify 触发一次 Instant Heal Effect → Character 扣除一次治疗次数并广播变化 → HUD 观察生命与次数。Notify 前中断不会提交 Effect 或次数；Ability 结束时释放移动锁。
 
-**伤害到受击/死亡**：CombatDamage 先拒绝终止目标和无敌命中；合格攻击在完美窗口内被拒绝时返回一次 `PerfectDodge`。成功伤害广播 `Applied`，HitReaction 取消可中断动作并短暂硬直；Health 归零时 CombatDeath 先添加 Dead Tag，再通知宿主停止动作、窗口、恢复、AI 与移动，最后向 GameMode 报告胜负。
+**伤害到受击/死亡**：CombatDamage 先拒绝终止目标和无敌命中。成功伤害广播 `Applied`，只有伤害请求声明受击资格时 HitReaction 才取消可中断动作并短暂硬直；资格由每个 Combat Hit Window 的可编辑配置决定，并在窗口打开时保存。Health 归零时 CombatDeath 先添加 Dead Tag，再通知宿主停止动作、窗口、恢复、AI 与移动，最后向 GameMode 报告胜负。
 
 **入口到战斗**：玩家在通道自由移动 → 入口 Trigger 请求 GameMode 播放 Boss 出场序列并关闭 Gameplay 输入 → 序列结束后恢复玩家视角与输入、启动 Boss StateTree、显示 Boss 血条。
 

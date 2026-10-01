@@ -84,6 +84,7 @@ private:
 	void HandleMove(const FInputActionValue& Value);
 	void HandleLook(const FInputActionValue& Value);
 	void HandleComboAttack();
+	void HandleComboAttackReleased();
 	void HandleHeavyAttackPressed();
 	void HandleHeavyAttackReleased();
 	void HandleHeal();

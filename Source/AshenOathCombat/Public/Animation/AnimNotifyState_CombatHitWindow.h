@@ -26,6 +26,10 @@ public:
 	UAnimNotifyState_CombatHitWindow();
 	virtual void PostLoad() override;
 
+	// Authored per notify window; runtime state is copied into CombatMelee.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat Hit Window")
+	bool bCanTriggerHitReaction = true;
+
 	virtual void NotifyBegin(
 		USkeletalMeshComponent* MeshComp,
 		UAnimSequenceBase* Animation,

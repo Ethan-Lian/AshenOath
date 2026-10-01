@@ -145,9 +145,7 @@ bool FAshenOathDeathLifecycleTest::RunTest(const FString& Parameters)
 		DefenseTags,
 		0.0f,
 		1.0f,
-		World->GetTimeSeconds(),
-		0.1f,
-		0.2f
+		World->GetTimeSeconds()
 	);
 	TestTrue(TEXT("Pre-death defense window starts"), DefenseHandle.IsValid());
 	TestTrue(TEXT("Pre-death defense window activates"), Defense->ActivateDodgeWindow(DefenseHandle));

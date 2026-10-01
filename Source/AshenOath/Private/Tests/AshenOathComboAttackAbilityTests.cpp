@@ -12,7 +12,10 @@
 #include "Actions/CombatMeleeComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
+#include "Animation/AnimNotifyState_CombatHitWindow.h"
+#include "Animation/AnimNotifies/AnimNotify.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Damage/CombatDamageComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -20,6 +23,7 @@
 #include "GameplayAbilitySpec.h"
 #include "GameplayTags/AshenOathGameplayTags.h"
 #include "Misc/AutomationTest.h"
+#include "Reaction/CombatHitReactionComponent.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FAshenOathComboWindowConfigurationTest,
@@ -79,6 +83,22 @@ bool FAshenOathComboWindowConfigurationTest::RunTest(const FString& Parameters)
 		}
 		TestEqual(*FString::Printf(TEXT("%s has exactly one ComboWindow"), *SectionName.ToString()),
 			WindowCount, 1);
+	}
+	for (int32 SectionIndex = 0; SectionIndex < ActionData->ComboSections.Num(); ++SectionIndex)
+	{
+		int32 HitWindowCount = 0;
+		for (const FAnimNotifyEvent& Event : Montage->Notifies)
+		{
+			const UAnimNotifyState_CombatHitWindow* HitWindow = Cast<UAnimNotifyState_CombatHitWindow>(Event.NotifyStateClass);
+			if (HitWindow && Montage->GetSectionName(Montage->GetSectionIndexFromPosition(Event.GetTriggerTime())) ==
+				ActionData->ComboSections[SectionIndex])
+			{
+				++HitWindowCount;
+				TestEqual(TEXT("Authored combo windows enable reaction only on the last hit"),
+					HitWindow->bCanTriggerHitReaction, SectionIndex == ActionData->ComboSections.Num() - 1);
+			}
+		}
+		TestTrue(TEXT("Every combo section has an authored hit window"), HitWindowCount > 0);
 	}
 	return true;
 }
@@ -241,7 +261,8 @@ bool FAshenOathComboAttackAbilityLifecycleTest::RunTest(const FString& Parameter
 		Mesh,
 		ActionData->Montage,
 		FirstMontageInstanceId,
-		FirstNotifyInstanceId
+		FirstNotifyInstanceId,
+		false
 	);
 	TestTrue(TEXT("A matching Montage signal opens the hit window"),
 		Melee->HasActiveHitWindow());
@@ -249,6 +270,7 @@ bool FAshenOathComboAttackAbilityLifecycleTest::RunTest(const FString& Parameter
 	const FVector FirstTraceLocation =
 		Mesh->GetSocketLocation(ActionData->MeleeTraceBones[0]);
 	Target->SetActorLocation(FirstTraceLocation, false, nullptr, ETeleportType::TeleportPhysics);
+	TestTrue(TEXT("Boss starts an attack before receiving ordinary damage"), Target->RequestSingleSwing());
 	Melee->TickHitWindowFromAnimation(
 		Mesh,
 		ActionData->Montage,
@@ -260,6 +282,9 @@ bool FAshenOathComboAttackAbilityLifecycleTest::RunTest(const FString& Parameter
 		TargetAbilitySystem->GetNumericAttribute(HealthAttribute);
 	TestTrue(TEXT("A valid melee window applies the configured damage"),
 		TargetHealthAfterFirstTrace < TargetHealthBeforeAttack);
+	TestFalse(TEXT("The first combo hit does not stagger"),
+		TargetAbilitySystem->HasMatchingGameplayTag(AshenOathGameplayTags::State_Staggered));
+	TestTrue(TEXT("The first combo hit does not interrupt the Boss attack"), Target->IsSingleSwingActive());
 
 	Melee->TickHitWindowFromAnimation(
 		Mesh,
@@ -270,6 +295,50 @@ bool FAshenOathComboAttackAbilityLifecycleTest::RunTest(const FString& Parameter
 	TestEqual(TEXT("One hit window damages the same target only once"),
 		TargetAbilitySystem->GetNumericAttribute(HealthAttribute),
 		TargetHealthAfterFirstTrace);
+
+	Melee->EndHitWindowFromAnimation(Mesh, ActionData->Montage, FirstMontageInstanceId, FirstNotifyInstanceId);
+	for (int32 SectionIndex = 1; SectionIndex < ActionData->ComboSections.Num(); ++SectionIndex)
+	{
+		const int32 NotifyId = FirstNotifyInstanceId + SectionIndex;
+		AnimInstance->Montage_JumpToSection(ActionData->ComboSections[SectionIndex], ActionData->Montage);
+		const bool bFinalSection = SectionIndex == ActionData->ComboSections.Num() - 1;
+		Melee->BeginHitWindowFromAnimation(Mesh, ActionData->Montage, FirstMontageInstanceId, NotifyId, bFinalSection);
+		if (SectionIndex == 1)
+		{
+			// A section transition after opening must not upgrade this window.
+			AnimInstance->Montage_JumpToSection(ActionData->ComboSections.Last(), ActionData->Montage);
+		}
+		const float HealthBeforeHit = TargetAbilitySystem->GetNumericAttribute(HealthAttribute);
+		Melee->TickHitWindowFromAnimation(Mesh, ActionData->Montage, FirstMontageInstanceId, NotifyId);
+		TestTrue(TEXT("Every combo section still applies damage"),
+			TargetAbilitySystem->GetNumericAttribute(HealthAttribute) < HealthBeforeHit);
+		TestEqual(TEXT("Only a window marked for hit reaction staggers"),
+			TargetAbilitySystem->HasMatchingGameplayTag(AshenOathGameplayTags::State_Staggered), bFinalSection);
+		TestEqual(TEXT("Only the last combo hit interrupts the Boss attack"),
+			Target->IsSingleSwingActive(), !bFinalSection);
+		Melee->EndHitWindowFromAnimation(Mesh, ActionData->Montage, FirstMontageInstanceId, NotifyId);
+	}
+	Target->FindComponentByClass<UCombatHitReactionComponent>()->ResetReaction();
+
+	// The same section can have independent disabled and enabled windows.
+	AnimInstance->Montage_JumpToSection(ActionData->ComboSections[0], ActionData->Montage);
+	UAnimNotifyState_CombatHitWindow* TestWindow = NewObject<UAnimNotifyState_CombatHitWindow>();
+	FAnimNotifyEvent TestNotifyEvent;
+	TestNotifyEvent.NotifyStateClass = TestWindow;
+	FBranchingPointNotifyPayload Payload(Mesh, ActionData->Montage, &TestNotifyEvent, FirstMontageInstanceId);
+	TestWindow->bCanTriggerHitReaction = false;
+	TestWindow->BranchingPointNotifyBegin(Payload);
+	TestWindow->bCanTriggerHitReaction = true;
+	TestWindow->BranchingPointNotifyTick(Payload, 0.0f);
+	TestFalse(TEXT("An unmarked window in the first section does not stagger"),
+		TargetAbilitySystem->HasMatchingGameplayTag(AshenOathGameplayTags::State_Staggered));
+	TestWindow->BranchingPointNotifyEnd(Payload);
+	TestWindow->BranchingPointNotifyBegin(Payload);
+	TestWindow->BranchingPointNotifyTick(Payload, 0.0f);
+	TestTrue(TEXT("A marked window can stagger even in the first section"),
+		TargetAbilitySystem->HasMatchingGameplayTag(AshenOathGameplayTags::State_Staggered));
+	TestWindow->BranchingPointNotifyEnd(Payload);
+	Target->FindComponentByClass<UCombatHitReactionComponent>()->ResetReaction();
 
 	const float StaminaBeforeRejectedRetrigger =
 		PlayerAbilitySystem->GetNumericAttribute(StaminaAttribute);
@@ -324,7 +393,8 @@ bool FAshenOathComboAttackAbilityLifecycleTest::RunTest(const FString& Parameter
 		Mesh,
 		ActionData->Montage,
 		FirstMontageInstanceId,
-		SecondNotifyInstanceId
+		SecondNotifyInstanceId,
+		false
 	);
 	TestFalse(TEXT("A delayed NotifyBegin from the old Montage is ignored"),
 		Melee->HasActiveHitWindow());
@@ -333,7 +403,8 @@ bool FAshenOathComboAttackAbilityLifecycleTest::RunTest(const FString& Parameter
 		Mesh,
 		ActionData->Montage,
 		SecondMontageInstanceId,
-		SecondNotifyInstanceId
+		SecondNotifyInstanceId,
+		false
 	);
 	TestTrue(TEXT("The current Montage can open its hit window"),
 		Melee->HasActiveHitWindow());
@@ -406,6 +477,15 @@ bool FAshenOathComboAttackAbilityLifecycleTest::RunTest(const FString& Parameter
 		PlayerAbilitySystem->HasMatchingGameplayTag(AshenOathGameplayTags::State_MovementLocked));
 
 	PlayerAbilitySystem->ClearAbility(FailedPlaybackSpecHandle);
+
+	FCombatDamageAttempt BossDamage;
+	BossDamage.SourceActor = Target;
+	BossDamage.DamageEffect = ActionData->DamageEffect;
+	BossDamage.HitTimeSeconds = World->GetTimeSeconds();
+	TestEqual(TEXT("Boss damage retains its default applied result"),
+		Player->FindComponentByClass<UCombatDamageComponent>()->ApplyDamageAttempt(BossDamage), ECombatDamageResult::Applied);
+	TestTrue(TEXT("Boss damage retains the player's hit reaction"),
+		PlayerAbilitySystem->HasMatchingGameplayTag(AshenOathGameplayTags::State_Staggered));
 	CleanupWorld();
 
 	return true;

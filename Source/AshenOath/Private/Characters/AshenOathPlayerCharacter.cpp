@@ -330,6 +330,36 @@ bool AAshenOathPlayerCharacter::RequestComboAttack()
 		AbilitySystemComponent->TryActivateAbility(ComboAttackAbilitySpecHandle);
 }
 
+bool AAshenOathPlayerCharacter::RequestComboAttackPressed()
+{
+	const bool bAccepted = RequestComboAttack();
+	FGameplayAbilitySpec* Spec = AbilitySystemComponent
+		? AbilitySystemComponent->FindAbilitySpecFromHandle(ComboAttackAbilitySpecHandle)
+		: nullptr;
+	if (Spec && Spec->IsActive())
+	{
+		if (UAshenOathComboAttackAbility* Combo = Cast<UAshenOathComboAttackAbility>(Spec->GetPrimaryInstance()))
+		{
+			return Combo->HandleInputPressed();
+		}
+	}
+	return bAccepted;
+}
+
+void AAshenOathPlayerCharacter::RequestComboAttackReleased()
+{
+	FGameplayAbilitySpec* Spec = AbilitySystemComponent
+		? AbilitySystemComponent->FindAbilitySpecFromHandle(ComboAttackAbilitySpecHandle)
+		: nullptr;
+	if (Spec && Spec->IsActive())
+	{
+		if (UAshenOathComboAttackAbility* Combo = Cast<UAshenOathComboAttackAbility>(Spec->GetPrimaryInstance()))
+		{
+			Combo->HandleInputReleased();
+		}
+	}
+}
+
 bool AAshenOathPlayerCharacter::RequestHeavyAttackPressed()
 {
 	if (!AbilitySystemComponent || IsActorBeingDestroyed() ||

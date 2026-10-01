@@ -56,6 +56,8 @@ Controller 的 Move/Look 回调先检查本地控制、对应输入未被忽略�
 
 Move 的 Completed/Canceled 会把最近意图清零；UnPossess 也会清零，避免新 Pawn 的第一次中立闪避复用旧身体的输入。闪避位移和无敌不由输入或动画直接执行，生命周期见 [战斗动作与伤害](combat-actions.md)。
 
+ComboAttack 的 Started 转发 `RequestComboAttackPressed`，Completed/Canceled 转发 `RequestComboAttackReleased`。按住状态由当前 Combo Ability 执行持有，在每个所属 Combo Window 开始时消费一次，支持点按与长按混合。禁止 Gameplay 输入、UnPossess 和 EndPlay 均向当前 Pawn 转发松开，避免动画仍在执行时继续自动接招。
+
 ## 移动与镜头的坐标关系
 
 `RequestMove` 接收 `X = 右、Y = 前` 的二维移动意图和参考 Yaw，将意图转换为世界水平方向后交给 CharacterMovement。无 Controller、正在销毁，或带 `State.Dead` / `State.MovementLocked` 的角色拒绝新移动请求。

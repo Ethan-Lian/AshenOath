@@ -19,6 +19,9 @@ public:
 
 	// Called when the combo-attack input repeats while this Ability is active.
 	bool TryQueueComboInput();
+	// A held input is consumed once when each owned Combo Window opens.
+	bool HandleInputPressed();
+	void HandleInputReleased();
 
 	// Signals are accepted only from the Mesh, Montage instance, and notify
 	// instance owned by this execution.
@@ -77,4 +80,5 @@ private:
 	int32 ActiveComboWindowNotifyInstanceId = INDEX_NONE;
 	bool bComboWindowOpen = false;
 	bool bComboInputConsumedInWindow = false;
+	bool bComboInputHeld = false;
 };

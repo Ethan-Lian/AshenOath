@@ -16,6 +16,11 @@
 #include "GameplayTags/AshenOathGameplayTags.h"
 #include "TimerManager.h"
 
+namespace
+{
+	constexpr double MinimumChargeDurationSeconds = 1.0;
+}
+
 UAshenOathHeavyAttackAbility::UAshenOathHeavyAttackAbility()
 {
 	FGameplayTagContainer AssetTags;
@@ -187,7 +192,7 @@ bool UAshenOathHeavyAttackAbility::IsHeavyDataReady(
 		: nullptr;
 
 	if (!HeavyData ||
-		HeavyData->MaxChargeDurationSeconds <= KINDA_SMALL_NUMBER ||
+		HeavyData->MaxChargeDurationSeconds < MinimumChargeDurationSeconds ||
 		HeavyData->MaxChargeStaminaCost <= KINDA_SMALL_NUMBER ||
 		HeavyData->ChargeDrainIntervalSeconds <= KINDA_SMALL_NUMBER ||
 		!ChargeCostEffect ||
@@ -237,6 +242,14 @@ bool UAshenOathHeavyAttackAbility::StartChargedRelease()
 	if (!IsActive() || ActivePhase != EAshenOathHeavyAttackPhase::Charging ||
 		GetActiveAttackMontageInstanceId() != ChargeMontageInstanceId)
 	{
+		return false;
+	}
+
+	// Input release and automatic release share the same minimum hold time.
+	// Elapsed charge cost is retained when an early release cancels the action.
+	if (World->GetTimeSeconds() - ChargeStartedAtSeconds < MinimumChargeDurationSeconds)
+	{
+		FinishAbility(true);
 		return false;
 	}
 

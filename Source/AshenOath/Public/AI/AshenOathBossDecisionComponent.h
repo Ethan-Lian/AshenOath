@@ -30,6 +30,22 @@ struct FAshenOathBossAttackUtilityConfig
 
 	UPROPERTY(EditAnywhere, Category = "Utility", meta = (ClampMin = "0.0", Units = "s"))
 	float CooldownSeconds = 2.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Utility", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float PressureCost = 0.25f;
+};
+
+/** Pressure reaches 1 to request a breather; only Observe releases it. */
+USTRUCT(BlueprintType)
+struct FAshenOathBossPressureConfig
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, Category = "Pressure", meta = (ClampMin = "0.0", ClampMax = "0.99"))
+	float ResumePressure = 0.25f;
+
+	UPROPERTY(EditAnywhere, Category = "Pressure", meta = (ClampMin = "0.01"))
+	float ReleasePerSecond = 0.35f;
 };
 
 struct FAshenOathBossScoredAttack
@@ -54,7 +70,7 @@ struct FAshenOathBossCombatDecision
 	TArray<FAshenOathBossScoredAttack, TInlineAllocator<4>> RankedAttacks;
 };
 
-// One observation taken at Decide, not continuously refreshed each Tick.
+// Immutable inputs for one attack selection.
 struct FAshenOathBossCombatSnapshot
 {
 	TWeakObjectPtr<AActor> TargetActor;
@@ -76,6 +92,14 @@ public:
 	UAshenOathBossDecisionComponent();
 
 	void InitializeDecisionStream(int32 Seed);
+
+	// Called exclusively by Observe Tick, after validating the current combat target.
+	void ReleasePressureWhileObserving(float DeltaSeconds);
+	bool ReconsiderCombatIntent();
+
+	float GetPressure() const { return Pressure; }
+	bool NeedsBreather() const { return bNeedsBreather; }
+	float GetDecisionInterval() const { return 0.15f; }
 
 	bool ChooseFirstPhaseCombatIntent(
 		AActor* TargetActor,
@@ -128,6 +152,14 @@ private:
 	FRandomStream CombatDecisionRandomStream;
 	TArray<EAshenOathBossAttackType, TInlineAllocator<2>> RecentAcceptedAttacks;
 	float LastAcceptedTimeSeconds[4] = {-1.0f, -1.0f, -1.0f, -1.0f};
+	float Pressure = 0.0f;
+	bool bNeedsBreather = false;
+	float LastMeleeRange = 0.0f;
+	float LastDashMinStartRange = 0.0f;
+	float LastDashMaxStartRange = 0.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|AI|Pressure")
+	FAshenOathBossPressureConfig PressureConfig;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|AI|Utility")
 	FAshenOathBossAttackUtilityConfig SingleSwingUtility;

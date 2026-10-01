@@ -13,6 +13,9 @@ namespace
 
 UAshenOathBossDecisionComponent::UAshenOathBossDecisionComponent()
 {
+	PrimaryComponentTick.bCanEverTick = false;
+	PrimaryComponentTick.bStartWithTickEnabled = false;
+
 	SingleSwingUtility.PreferredDistance = 170.0f;
 	SingleSwingUtility.CooldownSeconds = 0.75f;
 
@@ -20,27 +23,49 @@ UAshenOathBossDecisionComponent::UAshenOathBossDecisionComponent()
 	ComboUtility.FacingWeight = 0.75f;
 	ComboUtility.RecentUsePenalty = 1.0f;
 	ComboUtility.CooldownSeconds = 2.5f;
+	ComboUtility.PressureCost = 0.5f;
 
 	ChargedSwingUtility.PreferredDistance = 260.0f;
 	ChargedSwingUtility.FacingWeight = 0.9f;
 	ChargedSwingUtility.RecentUsePenalty = 1.0f;
 	ChargedSwingUtility.CooldownSeconds = 4.0f;
+	ChargedSwingUtility.PressureCost = 0.5f;
 
 	DashSwingUtility.PreferredDistance = 700.0f;
 	DashSwingUtility.DistanceFalloff = 450.0f;
 	DashSwingUtility.FacingWeight = 0.25f;
 	DashSwingUtility.RecentUsePenalty = 1.0f;
 	DashSwingUtility.CooldownSeconds = 5.0f;
+	DashSwingUtility.PressureCost = 0.4f;
 }
 
 void UAshenOathBossDecisionComponent::InitializeDecisionStream(const int32 Seed)
 {
 	CombatDecisionRandomStream.Initialize(Seed);
 	RecentAcceptedAttacks.Reset();
+	PendingCombatDecision = {};
+	Pressure = 0.0f;
+	bNeedsBreather = false;
 	for (float& LastAcceptedTime : LastAcceptedTimeSeconds)
 	{
 		LastAcceptedTime = -1.0f;
 	}
+}
+
+void UAshenOathBossDecisionComponent::ReleasePressureWhileObserving(const float DeltaSeconds)
+{
+	Pressure = FMath::Max(0.0f, Pressure - PressureConfig.ReleasePerSecond * DeltaSeconds);
+	if (bNeedsBreather && Pressure <= PressureConfig.ResumePressure)
+	{
+		bNeedsBreather = false;
+		UE_LOG(LogAshenOathBossUtility, Verbose, TEXT("Breather finished Pressure=%.2f"), Pressure);
+	}
+}
+
+bool UAshenOathBossDecisionComponent::ReconsiderCombatIntent()
+{
+	return ChooseFirstPhaseCombatIntent(UGameplayStatics::GetPlayerPawn(this, 0),
+		LastMeleeRange, LastDashMinStartRange, LastDashMaxStartRange);
 }
 
 const FAshenOathBossAttackUtilityConfig& UAshenOathBossDecisionComponent::GetUtilityConfig(
@@ -182,6 +207,10 @@ void UAshenOathBossDecisionComponent::RecordAcceptedAttack(EAshenOathBossAttackT
 	check(AttackIndex >= 0 && AttackIndex < BossAttackCount);
 
 	LastAcceptedTimeSeconds[AttackIndex] = World->GetTimeSeconds();
+	Pressure = FMath::Min(1.0f, Pressure + GetUtilityConfig(AttackType).PressureCost);
+	bNeedsBreather = bNeedsBreather || Pressure >= 1.0f;
+	UE_LOG(LogAshenOathBossUtility, Verbose, TEXT("Accepted Attack=%d Pressure=%.2f NeedsBreather=%d"),
+		AttackIndex, Pressure, bNeedsBreather);
 	RecentAcceptedAttacks.Insert(AttackType, 0);
 	if (RecentAcceptedAttacks.Num() > 2)
 	{
@@ -203,6 +232,9 @@ bool UAshenOathBossDecisionComponent::ChooseFirstPhaseCombatIntent(
 		return false;
 	}
 
+	LastMeleeRange = MeleeRange;
+	LastDashMinStartRange = DashMinStartRange;
+	LastDashMaxStartRange = DashMaxStartRange;
 	FAshenOathBossCombatSnapshot Snapshot;
 	if (!CaptureFirstPhaseCombatSnapshot(TargetActor, Snapshot))
 	{
@@ -214,28 +246,22 @@ bool UAshenOathBossDecisionComponent::ChooseFirstPhaseCombatIntent(
 	Decision.MeleeRange = MeleeRange;
 	Decision.DashMinStartRange = DashMinStartRange;
 	Decision.DashMaxStartRange = DashMaxStartRange;
-	BuildRankedAttacks(
-		Snapshot, MeleeRange, DashMinStartRange, DashMaxStartRange, Decision.RankedAttacks);
-	if (!Decision.RankedAttacks.IsEmpty())
-	{
-		Decision.Intent = EAshenOathBossCombatIntent::Attack;
-		const FAshenOathBossScoredAttack& Winner = Decision.RankedAttacks[0];
-		UE_LOG(LogAshenOathBossUtility, Verbose,
-			TEXT("Decision=Attack Distance=%.0f Facing=%.0f Winner=%d Score=%.2f Base=%.2f DistancePenalty=%.2f FacingPenalty=%.2f RecentPenalty=%.2f"),
-			Snapshot.Distance2D, Snapshot.FacingAngleDegrees,
-			static_cast<int32>(Winner.AttackType), Winner.TotalScore,
-			Winner.BaseScore, Winner.DistancePenalty,
-			Winner.FacingPenalty, Winner.RecentPenalty);
-	}
-	else if (Snapshot.Distance2D > MeleeRange)
-	{
-		Decision.Intent = EAshenOathBossCombatIntent::Approach;
-		Decision.ApproachRange = MeleeRange;
-	}
-	else
+	Decision.ApproachRange = MeleeRange;
+	if (bNeedsBreather)
 	{
 		Decision.Intent = EAshenOathBossCombatIntent::Wait;
 	}
+	else
+	{
+		BuildRankedAttacks(
+			Snapshot, MeleeRange, DashMinStartRange, DashMaxStartRange, Decision.RankedAttacks);
+		Decision.Intent = !Decision.RankedAttacks.IsEmpty()
+			? EAshenOathBossCombatIntent::Attack
+			: (Snapshot.Distance2D > MeleeRange ? EAshenOathBossCombatIntent::Approach : EAshenOathBossCombatIntent::Wait);
+	}
+	UE_LOG(LogAshenOathBossUtility, Verbose,
+		TEXT("Intent=%d Distance=%.0f Pressure=%.2f NeedsBreather=%d Candidates=%d"),
+		static_cast<int32>(Decision.Intent), Snapshot.Distance2D, Pressure, bNeedsBreather, Decision.RankedAttacks.Num());
 
 	PendingCombatDecision = MoveTemp(Decision);
 	return true;
@@ -415,8 +441,7 @@ FAshenOathBossAttackStartResult UAshenOathBossDecisionComponent::RequestSelected
 		return Result;
 	}
 
-	SetFallback(Decision.RankedAttacks[0].AttackType == EAshenOathBossAttackType::DashSwing
-		? EAshenOathBossCombatIntent::Approach
-		: EAshenOathBossCombatIntent::Wait);
+	SetFallback(FVector::Dist2D(Boss->GetActorLocation(), Decision.TargetActor->GetActorLocation()) > Decision.MeleeRange
+		? EAshenOathBossCombatIntent::Approach : EAshenOathBossCombatIntent::Wait);
 	return {};
 }

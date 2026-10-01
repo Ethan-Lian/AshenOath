@@ -22,7 +22,8 @@ class ASHENOATH_API UAshenOathHeavyAttackAbility : public UAshenOathMeleeAttackA
 public:
 	UAshenOathHeavyAttackAbility();
 
-	// Releases the only heavy action: a stationary charged staff thrust.
+	// Releases the stationary staff thrust after at least one second of charging;
+	// an earlier release cancels the charge and returns false.
 	bool HandleInputReleased();
 
 	// Dodge may preempt only the undecided/charging portion of this gesture.

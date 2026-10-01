@@ -143,7 +143,6 @@ bool UAshenOathMeleeAttackAbility::BeginMeleeExecution(
 
 	FCombatMeleeSessionRequest SessionRequest;
 	SessionRequest.DamageEffect = ActionData->DamageEffect;
-	SessionRequest.bCanTriggerPerfectDodge = ActionData->bCanTriggerPerfectDodge;
 	SessionRequest.TraceRadius = ActionData->MeleeTraceRadius;
 	SessionRequest.TraceBones = ActionData->MeleeTraceBones;
 	SessionRequest.SourceMesh = MeshComponent;

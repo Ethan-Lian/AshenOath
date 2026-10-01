@@ -61,7 +61,8 @@ public:
 		USkeletalMeshComponent* MeshComponent,
 		UAnimSequenceBase* Animation,
 		int32 MontageInstanceId,
-		int32 NotifyInstanceId
+		int32 NotifyInstanceId,
+		bool bCanTriggerHitReaction
 	);
 
 	void EndHitWindowFromAnimation(
@@ -92,7 +93,8 @@ private:
 
 	void BeginHitWindow(
 		const FCombatMeleeSessionHandle& SessionHandle,
-		int32 NotifyInstanceId
+		int32 NotifyInstanceId,
+		bool bCanTriggerHitReaction
 	);
 
 	void EndHitWindow(
@@ -147,7 +149,6 @@ private:
 
 	TArray<FName> ActiveMeleeTraceBones;
 	float ActiveMeleeTraceRadius = 0.0f;
-	bool bActiveDamageCanTriggerPerfectDodge = false;
 
 	// Identifies which detection session owns the current melee snapshot.
 	int32 ActiveSessionInstanceId = 0;
@@ -158,6 +159,7 @@ private:
 
 	// Identifies the Notify State that owns the open window.
 	int32 ActiveHitWindowNotifyInstanceId = INDEX_NONE;
+	bool bHitWindowCanTriggerHitReaction = false;
 
 	// Previous-frame world positions of each ordered weapon sample point.
 	TArray<FVector> PreviousMeleeTraceLocations;

@@ -2,6 +2,7 @@
 
 #include "AIController.h"
 #include "AITypes.h"
+#include "AI/AshenOathBossDecisionComponent.h"
 #include "Characters/AshenOathBossCharacter.h"
 #include "Kismet/GameplayStatics.h"
 #include "Navigation/PathFollowingComponent.h"
@@ -84,6 +85,7 @@ EStateTreeRunStatus FAshenOathBossApproachTask::EnterState(
 		? Cast<AAIController>(InstanceData.Boss->GetController())
 		: nullptr;
 	InstanceData.bOwnsMoveRequest = false;
+	InstanceData.ReconsiderElapsed = 0.0f;
 	InstanceData.EffectiveRange = InstanceData.AttackRange;
 
 	if (!IsValid(InstanceData.Boss) ||
@@ -139,7 +141,7 @@ EStateTreeRunStatus FAshenOathBossApproachTask::Tick(
 	FStateTreeExecutionContext& Context,
 	const float DeltaTime) const
 {
-	const FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
 
 	if (!IsValid(InstanceData.Boss) ||
 		!InstanceData.Boss->IsCurrentCombatTarget(InstanceData.TargetActor) ||
@@ -152,6 +154,23 @@ EStateTreeRunStatus FAshenOathBossApproachTask::Tick(
 	{
 		FaceTarget(*InstanceData.Boss, *InstanceData.TargetActor);
 		return EStateTreeRunStatus::Succeeded;
+	}
+
+	InstanceData.ReconsiderElapsed += DeltaTime;
+	const UAshenOathBossDecisionComponent* DecisionComponent =
+		InstanceData.Boss->FindComponentByClass<UAshenOathBossDecisionComponent>();
+	if (InstanceData.ReconsiderElapsed >= DecisionComponent->GetDecisionInterval())
+	{
+		InstanceData.ReconsiderElapsed = 0.0f;
+		if (!InstanceData.Boss->ReconsiderCombatIntent())
+		{
+			return EStateTreeRunStatus::Failed;
+		}
+		if (InstanceData.Boss->GetPendingCombatIntent() != EAshenOathBossCombatIntent::Approach)
+		{
+			return EStateTreeRunStatus::Succeeded;
+		}
+		InstanceData.Boss->TryConsumeApproachDecision(InstanceData.EffectiveRange);
 	}
 
 	const UPathFollowingComponent* PathFollowing = InstanceData.AIController->GetPathFollowingComponent();
@@ -172,9 +191,69 @@ void FAshenOathBossApproachTask::ExitState(
 
 	InstanceData.bOwnsMoveRequest = false;
 	InstanceData.EffectiveRange = 0.0f;
+	InstanceData.ReconsiderElapsed = 0.0f;
 	InstanceData.AIController = nullptr;
 	InstanceData.TargetActor = nullptr;
 	InstanceData.Boss = nullptr;
+}
+
+EStateTreeRunStatus FAshenOathBossObserveTask::EnterState(
+	FStateTreeExecutionContext& Context, const FStateTreeTransitionResult& Transition) const
+{
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	InstanceData.Boss = ResolveBoss(Context);
+	InstanceData.ReconsiderElapsed = 0.0f;
+	if (!IsValid(InstanceData.Boss) ||
+		InstanceData.Boss->GetPendingCombatIntent() != EAshenOathBossCombatIntent::Wait)
+	{
+		return EStateTreeRunStatus::Failed;
+	}
+	InstanceData.Boss->ClearPendingCombatDecision();
+	return EStateTreeRunStatus::Running;
+}
+
+EStateTreeRunStatus FAshenOathBossObserveTask::Tick(FStateTreeExecutionContext& Context, float DeltaTime) const
+{
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	AActor* Target = IsValid(InstanceData.Boss) ? UGameplayStatics::GetPlayerPawn(InstanceData.Boss, 0) : nullptr;
+	if (!IsValid(InstanceData.Boss) || !InstanceData.Boss->IsCurrentCombatTarget(Target))
+	{
+		return EStateTreeRunStatus::Failed;
+	}
+	const FVector ToTarget = Target->GetActorLocation() - InstanceData.Boss->GetActorLocation();
+	if (!ToTarget.IsNearlyZero())
+	{
+		const FRotator Facing = FMath::RInterpConstantTo(InstanceData.Boss->GetActorRotation(),
+			FRotator(0.0f, ToTarget.Rotation().Yaw, 0.0f), DeltaTime, InstanceData.TurnSpeed);
+		InstanceData.Boss->SetActorRotation(Facing);
+	}
+	InstanceData.ReconsiderElapsed += DeltaTime;
+	UAshenOathBossDecisionComponent* DecisionComponent =
+		InstanceData.Boss->FindComponentByClass<UAshenOathBossDecisionComponent>();
+	DecisionComponent->ReleasePressureWhileObserving(DeltaTime);
+	if (InstanceData.ReconsiderElapsed < DecisionComponent->GetDecisionInterval())
+	{
+		return EStateTreeRunStatus::Running;
+	}
+	InstanceData.ReconsiderElapsed = 0.0f;
+	if (!InstanceData.Boss->ReconsiderCombatIntent())
+	{
+		return EStateTreeRunStatus::Failed;
+	}
+	if (InstanceData.Boss->GetPendingCombatIntent() != EAshenOathBossCombatIntent::Wait)
+	{
+		return EStateTreeRunStatus::Succeeded;
+	}
+	InstanceData.Boss->ClearPendingCombatDecision();
+	return EStateTreeRunStatus::Running;
+}
+
+void FAshenOathBossObserveTask::ExitState(
+	FStateTreeExecutionContext& Context, const FStateTreeTransitionResult& Transition) const
+{
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	InstanceData.Boss = nullptr;
+	InstanceData.ReconsiderElapsed = 0.0f;
 }
 
 FAshenOathBossSingleSwingTask::FAshenOathBossSingleSwingTask()

@@ -37,6 +37,7 @@ void AAshenOathPlayerController::SetGameplayInputEnabled(const bool bEnabled)
 				Cast<AAshenOathPlayerCharacter>(GetPawn()))
 			{
 				PlayerCharacter->RequestClearLockOn();
+				PlayerCharacter->RequestComboAttackReleased();
 			}
 		}
 	}
@@ -107,6 +108,14 @@ void AAshenOathPlayerController::SetupInputComponent()
 				ComboAttackAction, ETriggerEvent::Started,
 				this, &AAshenOathPlayerController::HandleComboAttack
 			);
+			EnhancedInput->BindAction(
+				ComboAttackAction, ETriggerEvent::Completed,
+				this, &AAshenOathPlayerController::HandleComboAttackReleased
+			);
+			EnhancedInput->BindAction(
+				ComboAttackAction, ETriggerEvent::Canceled,
+				this, &AAshenOathPlayerController::HandleComboAttackReleased
+			);
 		}
 
 		if (DodgeAction && DodgeAction->ValueType == EInputActionValueType::Boolean)
@@ -173,6 +182,7 @@ void AAshenOathPlayerController::OnPossess(APawn* InPawn)
 
 void AAshenOathPlayerController::OnUnPossess()
 {
+	HandleComboAttackReleased();
 	CurrentMovementIntent = FVector2D::ZeroVector;
 	RemoveGameplayInputMapping();
 	Super::OnUnPossess();
@@ -180,6 +190,7 @@ void AAshenOathPlayerController::OnUnPossess()
 
 void AAshenOathPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	HandleComboAttackReleased();
 	RemoveGameplayInputMapping();
 	Super::EndPlay(EndPlayReason);
 }
@@ -308,7 +319,15 @@ void AAshenOathPlayerController::HandleComboAttack()
 
 	if (IsValid(PlayerCharacter))
 	{
-		PlayerCharacter->RequestComboAttack();
+		PlayerCharacter->RequestComboAttackPressed();
+	}
+}
+
+void AAshenOathPlayerController::HandleComboAttackReleased()
+{
+	if (AAshenOathPlayerCharacter* PlayerCharacter = Cast<AAshenOathPlayerCharacter>(GetPawn()))
+	{
+		PlayerCharacter->RequestComboAttackReleased();
 	}
 }
 

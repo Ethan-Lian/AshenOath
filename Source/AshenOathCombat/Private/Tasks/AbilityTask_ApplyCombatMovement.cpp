@@ -121,22 +121,14 @@ void UAbilityTask_ApplyCombatMovement::TickTask(const float DeltaTime)
 
 		const FVector Delta = MovementDirection * MovementDistance *
 			(NewMovementAlpha - PreviousMovementAlpha);
-		FHitResult Hit;
-		Movement->SafeMoveUpdatedComponent(
-			Delta,
-			AvatarCharacter->GetActorQuat(),
-			true,
-			Hit
-		);
+		ApplyMovementDelta(Delta);
 
 		if (IsFinished())
 		{
 			return;
 		}
 
-		// SafeMoveUpdatedComponent applies only the collision-valid portion. Keep
-		// advancing the timeline so floor contact is not mistaken for a wall; an
-		// actual wall naturally truncates the accumulated displacement.
+		// Blocked distance is not carried into later frames or added to the end.
 	}
 
 	PreviousMovementAlpha = NewMovementAlpha;
@@ -149,6 +141,74 @@ void UAbilityTask_ApplyCombatMovement::TickTask(const float DeltaTime)
 		{
 			OnCompleted.Broadcast();
 		}
+	}
+}
+
+FVector UAbilityTask_ApplyCombatMovement::ComputeFloorDelta(
+	const FVector& Delta, const FHitResult& FloorHit) const
+{
+	const UCharacterMovementComponent* Movement = MovementComponent.Get();
+	if (Movement->IsWalkable(FloorHit) && FloorHit.ImpactNormal.Z > KINDA_SMALL_NUMBER)
+	{
+		// Preserve the frozen XY direction and distance while following the plane.
+		return FVector(Delta.X, Delta.Y,
+			-FVector::DotProduct(Delta, FloorHit.ImpactNormal) / FloorHit.ImpactNormal.Z);
+	}
+	return Delta;
+}
+
+void UAbilityTask_ApplyCombatMovement::ApplyMovementDelta(const FVector& Delta)
+{
+	UCharacterMovementComponent* Movement = MovementComponent.Get();
+	ACharacter* AvatarCharacter = Character.Get();
+	const bool bGroundMovement = SavedMovementMode == MOVE_Walking || SavedMovementMode == MOVE_NavWalking;
+	FFindFloorResult Floor;
+	FVector TravelDelta = Delta;
+	if (bGroundMovement)
+	{
+		Movement->FindFloor(AvatarCharacter->GetActorLocation(), Floor, false);
+		if (Floor.IsWalkableFloor() && !Floor.bLineTrace)
+		{
+			TravelDelta = ComputeFloorDelta(Delta, Floor.HitResult);
+		}
+	}
+
+	FHitResult Hit;
+	Movement->SafeMoveUpdatedComponent(TravelDelta, AvatarCharacter->GetActorQuat(), true, Hit);
+	if (IsFinished())
+	{
+		return;
+	}
+
+	float RemainingTime = 1.0f - Hit.Time;
+	if (bGroundMovement && Floor.IsWalkableFloor() && Hit.IsValidBlockingHit())
+	{
+		// A flat floor can lead into a ramp within this frame's sweep.
+		if (Movement->IsWalkable(Hit))
+		{
+			TravelDelta = ComputeFloorDelta(Delta * RemainingTime, Hit);
+			Movement->SafeMoveUpdatedComponent(TravelDelta, AvatarCharacter->GetActorQuat(), true, Hit);
+			if (IsFinished())
+			{
+				return;
+			}
+			RemainingTime *= 1.0f - Hit.Time;
+		}
+		if (Hit.IsValidBlockingHit() && Movement->CanStepUp(Hit))
+		{
+			// StepUp retains UE's height, clearance, walkability and collision checks.
+			Movement->StepUp(Movement->GetGravityDirection(), Delta * RemainingTime, Hit);
+			if (IsFinished())
+			{
+				return;
+			}
+		}
+	}
+
+	if (bGroundMovement)
+	{
+		Movement->FindFloor(AvatarCharacter->GetActorLocation(), Movement->CurrentFloor, false);
+		Movement->AdjustFloorHeight();
 	}
 }
 
