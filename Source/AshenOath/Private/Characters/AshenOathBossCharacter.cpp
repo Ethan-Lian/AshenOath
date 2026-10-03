@@ -84,6 +84,9 @@ void AAshenOathBossCharacter::BeginPlay()
 		this,
 		&AAshenOathBossCharacter::HandleDeathStarted
 	);
+	DeathPresentationFinishedHandle = DeathComponent->OnDeathPresentationFinished().AddUObject(
+		this, &AAshenOathBossCharacter::HandleDeathPresentationFinished
+	);
 	ApplyInitialAttributes();
 
 	if (!bInitialAttributesApplied)
@@ -142,6 +145,11 @@ void AAshenOathBossCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		DeathComponent->OnDeathStarted().Remove(DeathStartedHandle);
 		DeathStartedHandle.Reset();
+	}
+	if (DeathComponent && DeathPresentationFinishedHandle.IsValid())
+	{
+		DeathComponent->OnDeathPresentationFinished().Remove(DeathPresentationFinishedHandle);
+		DeathPresentationFinishedHandle.Reset();
 	}
 
 	if (StateTreeComponent)
@@ -333,12 +341,12 @@ void AAshenOathBossCharacter::HandleAbilityEnded(const FAbilityEndedData& EndedD
 	}
 }
 
-void AAshenOathBossCharacter::HandleDeathStarted()
+void AAshenOathBossCharacter::StopCombatForMatchEnd()
 {
 	DecisionComponent->ClearPendingCombatDecision();
 	if (StateTreeComponent)
 	{
-		StateTreeComponent->StopLogic(TEXT("Boss died"));
+		StateTreeComponent->StopLogic(TEXT("Match ended"));
 	}
 	ClearPendingCombatDecision();
 
@@ -362,8 +370,13 @@ void AAshenOathBossCharacter::HandleDeathStarted()
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
 		Movement->StopMovementImmediately();
-		Movement->DisableMovement();
 	}
+}
+
+void AAshenOathBossCharacter::HandleDeathStarted()
+{
+	StopCombatForMatchEnd();
+	GetCharacterMovement()->DisableMovement();
 
 	if (UWorld* World = GetWorld())
 	{
@@ -371,6 +384,17 @@ void AAshenOathBossCharacter::HandleDeathStarted()
 			World->GetAuthGameMode<AAshenOathGameMode>())
 		{
 			GameMode->ReportBossDeath(this);
+		}
+	}
+}
+
+void AAshenOathBossCharacter::HandleDeathPresentationFinished()
+{
+	if (UWorld* World = GetWorld())
+	{
+		if (AAshenOathGameMode* GameMode = World->GetAuthGameMode<AAshenOathGameMode>())
+		{
+			GameMode->ReportDeathPresentationFinished(this);
 		}
 	}
 }

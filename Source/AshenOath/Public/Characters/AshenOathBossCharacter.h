@@ -97,6 +97,7 @@ public:
 
 	// GameMode calls this after the arena entrance sequence finishes.
 	void StartCombatLogic();
+	void StopCombatForMatchEnd();
 
 	// True means GAS accepted the configured single-swing activation request.
 	bool RequestSingleSwing();
@@ -173,6 +174,7 @@ private:
 	void HandleAbilityEnded(const FAbilityEndedData& EndedData);
 
 	void HandleDeathStarted();
+	void HandleDeathPresentationFinished();
 
 	bool CanStartBossAttack(
 		EAshenOathBossAttackType AttackType,
@@ -262,6 +264,7 @@ private:
 
 	FDelegateHandle AbilityEndedDelegateHandle;
 	FDelegateHandle DeathStartedHandle;
+	FDelegateHandle DeathPresentationFinishedHandle;
 
 	FSingleSwingEndedEvent SingleSwingEndedEvent;
 	FAshenOathBossAttackEndedEvent BossAttackEndedEvent;

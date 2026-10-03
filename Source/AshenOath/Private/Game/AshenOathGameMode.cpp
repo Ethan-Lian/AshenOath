@@ -1,14 +1,17 @@
-﻿#include "Game/AshenOathGameMode.h"
+#include "Game/AshenOathGameMode.h"
 
 #include "LevelSequenceActor.h"
 #include "LevelSequencePlayer.h"
 #include "MovieSceneSequencePlaybackSettings.h"
 #include "Characters/AshenOathBossCharacter.h"
 #include "Characters/AshenOathPlayerCharacter.h"
+#include "Components/AudioComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "Player/AshenOathPlayerController.h"
+#include "Sound/SoundBase.h"
+#include "Sound/SoundMix.h"
 #include "UI/AshenOathHUD.h"
 
 AAshenOathGameMode::AAshenOathGameMode()
@@ -79,7 +82,7 @@ void AAshenOathGameMode::ReportPlayerDeath(
 		IsValid(PlayerController) &&
 		PlayerController->GetPawn() == Player)
 	{
-		TryResolveMatch(EAshenOathMatchOutcome::Defeat);
+		TryResolveMatch(EAshenOathMatchOutcome::Defeat, Player);
 	}
 }
 
@@ -88,18 +91,21 @@ void AAshenOathGameMode::ReportBossDeath(
 {
 	if (IsValid(Boss) && ActiveBoss.Get() == Boss)
 	{
-		TryResolveMatch(EAshenOathMatchOutcome::Victory);
+		TryResolveMatch(EAshenOathMatchOutcome::Victory, Boss);
 	}
 }
 
 void AAshenOathGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	GetWorldTimerManager().ClearTimer(MatchPresentationTimer);
+	MatchEndingActor.Reset();
+	ClearCombatMusic();
 	ClearIntroPlayback();
 	Super::EndPlay(EndPlayReason);
 }
 
 bool AAshenOathGameMode::TryResolveMatch(
-	const EAshenOathMatchOutcome RequestedOutcome)
+	const EAshenOathMatchOutcome RequestedOutcome, AActor* DeadActor)
 {
 	if (RequestedOutcome == EAshenOathMatchOutcome::InProgress ||
 		MatchOutcome != EAshenOathMatchOutcome::InProgress)
@@ -109,6 +115,12 @@ bool AAshenOathGameMode::TryResolveMatch(
 
 	// Commit before broadcasting because listeners execute synchronously.
 	MatchOutcome = RequestedOutcome;
+	MatchEndingActor = DeadActor;
+	if (CombatMusicComponent)
+	{
+		CombatMusicComponent->FadeOut(CombatMusicFadeOutSeconds, 0.0f);
+	}
+
 	const bool bIntroWasPlaying = IntroPlayer != nullptr;
 	if (bIntroWasPlaying)
 	{
@@ -124,7 +136,21 @@ bool AAshenOathGameMode::TryResolveMatch(
 			{
 				PlayerController->SetViewTarget(PlayerController->GetPawn());
 			}
-			PlayerController->SetGameplayInputEnabled(false);
+			PlayerController->EnterCinematicInputMode();
+			if (RequestedOutcome == EAshenOathMatchOutcome::Victory)
+			{
+				if (AAshenOathPlayerCharacter* Player = Cast<AAshenOathPlayerCharacter>(PlayerController->GetPawn()))
+				{
+					Player->StopCombatForMatchEnd();
+				}
+			}
+		}
+	}
+	if (RequestedOutcome == EAshenOathMatchOutcome::Defeat)
+	{
+		if (AAshenOathBossCharacter* Boss = ActiveBoss.Get())
+		{
+			Boss->StopCombatForMatchEnd();
 		}
 	}
 
@@ -133,13 +159,52 @@ bool AAshenOathGameMode::TryResolveMatch(
 	return true;
 }
 
+void AAshenOathGameMode::ReportDeathPresentationFinished(AActor* DeadActor)
+{
+	if (!IsValid(DeadActor) || MatchEndingActor.Get() != DeadActor ||
+		MatchOutcome == EAshenOathMatchOutcome::InProgress || bDeathPresentationReported)
+	{
+		return;
+	}
+
+	bDeathPresentationReported = true;
+	if (DeathPresentationHoldSeconds > 0.0f)
+	{
+		GetWorldTimerManager().SetTimer(MatchPresentationTimer, this,
+			&AAshenOathGameMode::ShowMatchPresentation, DeathPresentationHoldSeconds, false);
+	}
+	else
+	{
+		ShowMatchPresentation();
+	}
+}
+
+void AAshenOathGameMode::ShowMatchPresentation()
+{
+	if (bMatchPresentationReady || !bDeathPresentationReported)
+	{
+		return;
+	}
+
+	bMatchPresentationReady = true;
+	if (UWorld* World = GetWorld())
+	{
+		if (AAshenOathPlayerController* PlayerController =
+			Cast<AAshenOathPlayerController>(World->GetFirstPlayerController()))
+		{
+			PlayerController->SetGameplayInputEnabled(false);
+		}
+	}
+	MatchPresentationReadyEvent.Broadcast(MatchOutcome);
+}
+
 bool AAshenOathGameMode::RequestRetry(
 	APlayerController* RequestingController)
 {
 	UWorld* World = GetWorld();
 
 	if (bRetryRequested ||
-		MatchOutcome == EAshenOathMatchOutcome::InProgress ||
+		!bMatchPresentationReady ||
 		!World ||
 		!IsValid(RequestingController) ||
 		!RequestingController->IsLocalController() ||
@@ -235,6 +300,23 @@ bool AAshenOathGameMode::TryStartBossIntro(
 	IntroPlayer->OnFinished.AddDynamic(
 		this, &AAshenOathGameMode::HandleIntroFinished
 	);
+	IntroPlayer->OnStop.AddDynamic(
+		this, &AAshenOathGameMode::HandleIntroFinished
+	);
+
+	if (IntroSoundMix)
+	{
+		bIntroSoundMixPushed = true;
+		UGameplayStatics::PushSoundMixModifier(this, IntroSoundMix);
+	}
+
+	IntroPlaybackChangedEvent.Broadcast(true);
+	// Presentation listeners can synchronously resolve the match and clear playback.
+	if (!IntroPlayer || MatchOutcome != EAshenOathMatchOutcome::InProgress)
+	{
+		return true;
+	}
+
 	IntroPlayer->Play();
 	return true;
 }
@@ -244,6 +326,12 @@ void AAshenOathGameMode::BeginCombat()
 	if (!bIntroTriggered ||
 		bCombatActive ||
 		MatchOutcome != EAshenOathMatchOutcome::InProgress)
+	{
+		return;
+	}
+
+	ClearIntroPlayback();
+	if (MatchOutcome != EAshenOathMatchOutcome::InProgress)
 	{
 		return;
 	}
@@ -261,7 +349,6 @@ void AAshenOathGameMode::BeginCombat()
 		return;
 	}
 
-	ClearIntroPlayback();
 	PlayerController->SetViewTarget(PlayerController->GetPawn());
 
 	bCombatActive = true;
@@ -270,24 +357,68 @@ void AAshenOathGameMode::BeginCombat()
 
 	if (IsCombatActive())
 	{
+		StartCombatMusic();
 		CombatStartedEvent.Broadcast();
+	}
+}
+
+void AAshenOathGameMode::StartCombatMusic()
+{
+	if (!CombatMusic)
+	{
+		return;
+	}
+
+	CombatMusicComponent = UGameplayStatics::CreateSound2D(
+		this, CombatMusic, CombatMusicVolume, 1.0f, 0.0f, nullptr, false, false
+	);
+	if (CombatMusicComponent)
+	{
+		// Retain ownership before FadeIn starts playback and emits audio callbacks.
+		CombatMusicComponent->FadeIn(CombatMusicFadeInSeconds);
+	}
+}
+
+void AAshenOathGameMode::ClearCombatMusic()
+{
+	UAudioComponent* MusicToStop = CombatMusicComponent;
+	CombatMusicComponent = nullptr;
+	if (MusicToStop)
+	{
+		MusicToStop->Stop();
+		MusicToStop->DestroyComponent();
 	}
 }
 
 void AAshenOathGameMode::ClearIntroPlayback()
 {
-	if (IntroPlayer)
+	ULevelSequencePlayer* PlayerToStop = IntroPlayer;
+	ALevelSequenceActor* ActorToDestroy = IntroActor;
+	IntroPlayer = nullptr;
+	IntroActor = nullptr;
+
+	if (PlayerToStop)
 	{
-		IntroPlayer->OnFinished.RemoveDynamic(this, &AAshenOathGameMode::HandleIntroFinished);
-		IntroPlayer->Stop();
-		IntroPlayer = nullptr;
+		PlayerToStop->OnFinished.RemoveDynamic(this, &AAshenOathGameMode::HandleIntroFinished);
+		PlayerToStop->OnStop.RemoveDynamic(this, &AAshenOathGameMode::HandleIntroFinished);
+		PlayerToStop->Stop();
 	}
 
-	if (IsValid(IntroActor))
+	if (IsValid(ActorToDestroy))
 	{
-		IntroActor->Destroy();
+		ActorToDestroy->Destroy();
 	}
-	IntroActor = nullptr;
+
+	if (bIntroSoundMixPushed)
+	{
+		bIntroSoundMixPushed = false;
+		UGameplayStatics::PopSoundMixModifier(this, IntroSoundMix);
+	}
+
+	if (PlayerToStop)
+	{
+		IntroPlaybackChangedEvent.Broadcast(false);
+	}
 }
 
 void AAshenOathGameMode::HandleIntroFinished()

@@ -105,6 +105,9 @@ void AAshenOathPlayerCharacter::BeginPlay()
 			this,
 			&AAshenOathPlayerCharacter::HandleDeathStarted
 		);
+		DeathPresentationFinishedHandle = DeathComponent->OnDeathPresentationFinished().AddUObject(
+			this, &AAshenOathPlayerCharacter::HandleDeathPresentationFinished
+		);
 	}
 
 	if (AbilitySystemComponent)
@@ -194,6 +197,11 @@ void AAshenOathPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason
 	{
 		DeathComponent->OnDeathStarted().Remove(DeathStartedHandle);
 		DeathStartedHandle.Reset();
+	}
+	if (DeathComponent && DeathPresentationFinishedHandle.IsValid())
+	{
+		DeathComponent->OnDeathPresentationFinished().Remove(DeathPresentationFinishedHandle);
+		DeathPresentationFinishedHandle.Reset();
 	}
 
 	if (AbilitySystemComponent && MovementLockedStateChangedHandle.IsValid())
@@ -601,7 +609,7 @@ bool AAshenOathPlayerCharacter::IsLockedOn() const
 	return CombatTargetingComponent && CombatTargetingComponent->HasTarget();
 }
 
-void AAshenOathPlayerCharacter::HandleDeathStarted()
+void AAshenOathPlayerCharacter::StopCombatForMatchEnd()
 {
 	RequestClearLockOn();
 	CancelCombatAbilities();
@@ -630,8 +638,13 @@ void AAshenOathPlayerCharacter::HandleDeathStarted()
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
 		Movement->StopMovementImmediately();
-		Movement->DisableMovement();
 	}
+}
+
+void AAshenOathPlayerCharacter::HandleDeathStarted()
+{
+	StopCombatForMatchEnd();
+	GetCharacterMovement()->DisableMovement();
 
 	if (UWorld* World = GetWorld())
 	{
@@ -639,6 +652,17 @@ void AAshenOathPlayerCharacter::HandleDeathStarted()
 			World->GetAuthGameMode<AAshenOathGameMode>())
 		{
 			GameMode->ReportPlayerDeath(this);
+		}
+	}
+}
+
+void AAshenOathPlayerCharacter::HandleDeathPresentationFinished()
+{
+	if (UWorld* World = GetWorld())
+	{
+		if (AAshenOathGameMode* GameMode = World->GetAuthGameMode<AAshenOathGameMode>())
+		{
+			GameMode->ReportDeathPresentationFinished(this);
 		}
 	}
 }

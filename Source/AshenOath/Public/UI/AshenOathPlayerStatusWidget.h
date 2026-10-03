@@ -18,6 +18,7 @@ class ASHENOATH_API UAshenOathPlayerStatusWidget : public UUserWidget
 public:
 	// Entry point for observing a player. Binds attribute-change delegates; nullptr stops observation.
 	void ObservePlayer(AAshenOathPlayerCharacter* Player);
+	void SetIntroPlaying(bool bPlaying);
 
 protected:
 	virtual void NativeDestruct() override;
@@ -41,6 +42,7 @@ private:
 	void HandleAttributeChanged(const FOnAttributeChangeData& ChangeData);
 
 	void RefreshHealth();
+	void RefreshVisibility();
 
 	void RefreshStamina();
 	void RefreshHealUses();
@@ -51,6 +53,7 @@ private:
 	// The widget observes the ASC without owning it; the player may disappear first.
 	TWeakObjectPtr<UAbilitySystemComponent> ObservedAbilitySystem;
 	TWeakObjectPtr<AAshenOathPlayerCharacter> ObservedPlayer;
+	bool bIntroPlaying = false;
 
 	FDelegateHandle HealthChangedHandle;
 

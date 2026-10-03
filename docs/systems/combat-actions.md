@@ -25,7 +25,7 @@
 | `UAnimNotifyState_CombatHitWindow` | 从 UE 动画回调提取 Mesh、动画来源、Montage 实例 ID 和 Notify 实例 ID；不保存战斗状态 |
 | `UCombatDamageComponent` | 在目标侧拒绝终止目标；按命中时刻区分闪避无敌和其他来源无敌，经 GAS 应用伤害 Effect 并广播解析结果 |
 | `UCombatHitReactionComponent` | 监听目标的 Applied 结果，取消可中断动作，拥有短硬直 Tag、计时器和基础受击 Montage |
-| `UCombatDeathComponent` | 观察注入的生命属性，拥有一次性终止 Tag、死亡事件和基础死亡 Montage |
+| `UCombatDeathComponent` | 观察注入的生命属性，拥有一次性终止 Tag、死亡开始/表现结束事件和基础死亡 Montage |
 | `UAshenOathActionData` | 所有动作共享的 Montage、播放速率、可选起始 Section 和 Cost Effect |
 | `UAshenOathMeleeActionData` | 近战伤害 Effect 和扫掠参数；Boss 单次挥击直接使用此类型 |
 | `UAshenOathComboAttackData` / `UAshenOathHeavyAttackData` | 在项目模块中分别扩展连招段落与重击蓄力配置，继承近战数据 |
@@ -127,6 +127,10 @@ CombatDamage 在解析每次请求后同步广播结果。HitReaction 只响应�
 每个 `Combat Hit Window` Notify State 独立配置 `Can Trigger Hit Reaction`。NotifyBegin（包括 Branching Point）将此配置传给 Melee，Melee 验证动画来源身份后保存到本次窗口，再随伤害请求传给目标；窗口关闭或会话结束时清理。资格不依赖 Section 名称、段数或按键次数，同一 Section 的多个窗口可以分别配置。关闭时正常扣血，但不取消目标动作、不启动受击表现。当前玩家四段普攻的前三段窗口关闭、末段开启，蓄力重击与 Boss 攻击窗口开启；新建窗口默认开启，需要按攻击设计调整。
 
 CombatDeath 由游戏模块注入生命属性和终止 Tag，初始化后监听 ASC 属性变化。生命首次降到 0 时，它先记录不可逆死亡状态并添加自己拥有的一份终止 Tag，然后广播 `DeathStarted`，最后播放死亡 Montage。玩家/Boss 宿主分别在回调中清理自身动作、Melee、Defense、Reaction、恢复、AI 和移动，再把死亡报告给 GameMode；通用 Combat 模块不引用具体角色、GameMode 或 UI。
+
+死亡 Montage 的所属播放实例结束（含中断）后，CombatDeath 一次性广播 `DeathPresentationFinished`；未配置 Montage 或播放失败时，在 `DeathStarted` 广播结束后立即报告表现结束。Character 将此通知转发给 GameMode，只有决定本局结果的角色能够开放结算展示。GameMode 的 `MatchOutcomeChanged` 仍即时报告胜负，HUD 改为观察 `MatchPresentationReady`：动画结束后再停留 `DeathPresentationHoldSeconds`（默认 0.5 秒）才显示 UI、鼠标和 Retry。等待期间关闭 Gameplay 输入并停止双方战斗行为，动画、死亡音效和特效继续运行；Feedback 不承担结算计时。EndPlay 解除所属 Montage 委托、Character/HUD 订阅和 GameMode 计时器，避免退出后触发展示。
+
+2026-10-01：UE 5.8.2 的 AshenOathEditor Development 构建通过；`AshenOath.Combat.Lifecycle` 的 Death、DeathPresentation、MatchOutcome 和 BossIntro 四项自动化测试通过。DeathPresentation 使用实际玩家/Boss Blueprint，覆盖 Montage 正常结束、中断、缺失、播放失败和退出清理；MatchOutcome 验证胜负即时锁定、展示延后、来源身份与重复通知隔离、等待期间拒绝 Retry。测试在无渲染环境运行，GameLevel 中 UI 遮挡与死亡特效的实际观感尚待实机验收。
 
 ## 恢复与清理
 

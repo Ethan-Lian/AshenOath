@@ -9,6 +9,7 @@
 class ACharacter;
 class UAbilitySystemComponent;
 class UAnimMontage;
+class UAnimInstance;
 struct FOnAttributeChangeData;
 
 /** Owns one actor's terminal attribute transition and basic death presentation. */
@@ -21,6 +22,7 @@ public:
 	UCombatDeathComponent();
 
 	DECLARE_MULTICAST_DELEGATE(FDeathStartedEvent);
+	DECLARE_MULTICAST_DELEGATE(FDeathPresentationFinishedEvent);
 
 	// The game module injects its health attribute and terminal tag so this
 	// reusable module does not depend on project-specific declarations.
@@ -40,6 +42,13 @@ public:
 		return DeathStartedEvent;
 	}
 
+	// Fires once after the owned Montage ends (including interruption), or
+	// immediately after DeathStarted if no Montage can be played.
+	FDeathPresentationFinishedEvent& OnDeathPresentationFinished()
+	{
+		return DeathPresentationFinishedEvent;
+	}
+
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
@@ -48,6 +57,9 @@ private:
 	bool TryStartDeath();
 	void UnbindHealth();
 	void PlayDeathMontage();
+	void HandleDeathMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+	void FinishDeathPresentation();
+	void UnbindDeathMontage();
 
 	UPROPERTY(EditAnywhere, Category = "Combat|Death")
 	TObjectPtr<UAnimMontage> DeathMontage;
@@ -59,10 +71,14 @@ private:
 
 	TWeakObjectPtr<ACharacter> CharacterOwner;
 	TWeakObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
+	TWeakObjectPtr<UAnimInstance> DeathAnimInstance;
+	int32 DeathMontageInstanceID = INDEX_NONE;
 
 	FDelegateHandle HealthChangedHandle;
 	FDeathStartedEvent DeathStartedEvent;
+	FDeathPresentationFinishedEvent DeathPresentationFinishedEvent;
 
 	bool bDeathStarted = false;
+	bool bDeathPresentationFinished = false;
 	bool bOwnsTerminalStateTag = false;
 };

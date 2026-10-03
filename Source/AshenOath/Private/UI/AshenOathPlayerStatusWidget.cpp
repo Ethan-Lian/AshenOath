@@ -1,4 +1,4 @@
-﻿#include "UI/AshenOathPlayerStatusWidget.h"
+#include "UI/AshenOathPlayerStatusWidget.h"
 
 #include "AbilitySystemComponent.h"
 #include "AbilitySystem/AshenOathAttributeSet.h"
@@ -13,7 +13,7 @@ void UAshenOathPlayerStatusWidget::ObservePlayer(AAshenOathPlayerCharacter* Play
 
 	if (!IsValid(Player))
 	{
-		SetVisibility(ESlateVisibility::Collapsed);
+		RefreshVisibility();
 		return;
 	}
 
@@ -21,7 +21,7 @@ void UAshenOathPlayerStatusWidget::ObservePlayer(AAshenOathPlayerCharacter* Play
 
 	if (!IsValid(AbilitySystemComponent))
 	{
-		SetVisibility(ESlateVisibility::Collapsed);
+		RefreshVisibility();
 		return;
 	}
 
@@ -46,12 +46,25 @@ void UAshenOathPlayerStatusWidget::ObservePlayer(AAshenOathPlayerCharacter* Play
 		AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(UAshenOathAttributeSet::GetMaxStaminaAttribute())
 			.AddUObject(this, &UAshenOathPlayerStatusWidget::HandleAttributeChanged);
 
-	SetVisibility(ESlateVisibility::HitTestInvisible);
+	RefreshVisibility();
 
 	RefreshHealth();
 
 	RefreshStamina();
 	RefreshHealUses();
+}
+
+void UAshenOathPlayerStatusWidget::SetIntroPlaying(const bool bPlaying)
+{
+	bIntroPlaying = bPlaying;
+	RefreshVisibility();
+}
+
+void UAshenOathPlayerStatusWidget::RefreshVisibility()
+{
+	SetVisibility(!bIntroPlaying && ObservedAbilitySystem.IsValid()
+		? ESlateVisibility::HitTestInvisible
+		: ESlateVisibility::Collapsed);
 }
 
 void UAshenOathPlayerStatusWidget::NativeDestruct()

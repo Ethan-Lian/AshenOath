@@ -83,6 +83,9 @@ public:
 	// Stops any current action and movement before the entrance sequence takes control.
 	void PrepareForBossIntro();
 
+	// Stops gameplay while death presentation continues to animate.
+	void StopCombatForMatchEnd();
+
 	// Returns whether a valid lock target is currently owned.
 	bool IsLockedOn() const;
 
@@ -206,6 +209,7 @@ private:
 	// PossessedBy may run again after repossession; initial stats are applied only once.
 	bool bInitialAttributesApplied = false;
 	FDelegateHandle DeathStartedHandle;
+	FDelegateHandle DeathPresentationFinishedHandle;
 	FDelegateHandle MovementLockedStateChangedHandle;
 	FDelegateHandle StaggeredStateChangedHandle;
 	FDelegateHandle LockTargetChangedHandle;
@@ -214,6 +218,7 @@ private:
 	void ApplyInitialAttributes();
 
 	void HandleDeathStarted();
+	void HandleDeathPresentationFinished();
 	void HandleMovementLockedStateChanged(const FGameplayTag Tag, int32 NewCount);
 	void HandleLockTargetChanged(AActor* PreviousTarget, AActor* NewTarget);
 	void UpdateLockedView(float DeltaSeconds);

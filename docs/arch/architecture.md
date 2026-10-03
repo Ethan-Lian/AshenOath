@@ -50,7 +50,7 @@ flowchart TD
 
 | 对象 | 持有或管理的内容 | 边界 |
 |---|---|---|
-| GameMode | 默认 Pawn/Controller 类、当前 Boss、入口演出和一次性胜负结果 | 入口演出结束后开放战斗并启动 Boss AI；首个有效死亡报告决定胜负；只在结算后接受重试并重新加载当前关卡 |
+| GameMode | 默认 Pawn/Controller 类、当前 Boss、入口演出、战斗音乐和一次性胜负结果 | 入口演出结束后开放战斗并启动 Boss AI、淡入可选的 2D BGM；首个有效死亡报告决定胜负并淡出 BGM；死亡 Montage 结束后等待可配置停留时间再开放结算 UI 和重试；退出时停止并释放音乐组件 |
 | PlayerController | InputComponent 绑定、Mapping Context 注册、最近移动意图和重试转发 | 每次输入取当前 Pawn；由 GameMode 在演出、战斗和结算时切换输入模式，不自行决定胜负 |
 | Player Character | ASC、AttributeSet、镜头和 Combat 组件；使用继承的 CharacterMovement | 验证角色状态、选择玩家动作数据，将相对视角意图转为世界方向；不直接写战斗数值 |
 | Boss Character | ASC、AttributeSet、StateTreeComponent、四类近战 AbilitySpec 与请求身份 | 协调初始化和退出顺序；向 StateTree 提供稳定入口，负责 GAS 攻击请求与取消 |
@@ -71,7 +71,7 @@ flowchart TD
 | CombatMelee | 伤害配置快照、播放来源身份、武器扫掠、Notify 窗口和窗口内去重 | 不查找当前 Ability；只接受所属 Mesh、AnimInstance、Montage 实例的信号并提交中立伤害尝试 |
 | CombatDamage | 目标侧伤害入口、终止状态拒绝、无敌判定和结果广播 | 区分闪避无敌与其他来源无敌，通过源/目标 ASC 应用伤害 Effect |
 | CombatHitReaction | 监听目标侧具有受击资格的 Applied 结果，拥有短硬直 Tag、计时器和基础受击 Montage | 项目模块注入 Tag；终止状态不再启动受击，死亡可同步复位其状态 |
-| CombatDeath | 观察注入的 Health 属性，拥有一次性 Dead Tag、死亡事件和基础 Montage | 先建立终止状态，再广播给宿主清理并播放死亡表现；不引用具体角色或 GameMode |
+| CombatDeath | 观察注入的 Health 属性，拥有一次性 Dead Tag、死亡开始/表现结束事件和基础 Montage | 先建立终止状态，再广播给宿主清理并播放死亡表现；不引用具体角色或 GameMode |
 | HUD / Outcome Widget | 观察玩家 Health、Stamina、剩余治疗次数和 GameMode 胜负 | UI 不决定治疗是否可用；Retry 按钮只向 Controller 转发请求 |
 | AnimInstance | 本实例的移动表现数据；对 Character/Movement 的弱引用缓存 | 读取实际移动结果，不拥有 Gameplay 动作状态 |
 
@@ -91,9 +91,13 @@ flowchart TD
 
 **伤害到受击/死亡**：CombatDamage 先拒绝终止目标和无敌命中。成功伤害广播 `Applied`，只有伤害请求声明受击资格时 HitReaction 才取消可中断动作并短暂硬直；资格由每个 Combat Hit Window 的可编辑配置决定，并在窗口打开时保存。Health 归零时 CombatDeath 先添加 Dead Tag，再通知宿主停止动作、窗口、恢复、AI 与移动，最后向 GameMode 报告胜负。
 
-**入口到战斗**：玩家在通道自由移动 → 入口 Trigger 请求 GameMode 播放 Boss 出场序列并关闭 Gameplay 输入 → 序列结束后恢复玩家视角与输入、启动 Boss StateTree、显示 Boss 血条。
+**入口到战斗**：玩家在通道自由移动 → 入口 Trigger 请求 GameMode 播放 Boss 出场序列并关闭 Gameplay 输入 → GameMode 通知 HUD 隐藏玩家状态栏，并推入可选的入口 SoundMix 压低环境音；专属出场声音由 Sequence 的 Audio Track 配置 → 序列结束或主动停止后释放 Mix、恢复玩家状态栏与视角/输入、启动 Boss StateTree、显示 Boss 血条。演出中结算或退出也释放演出控制；未配置序列时直接进入战斗。
 
-**结算到重试**：玩家或 Boss 的首个死亡报告提交唯一 Defeat/Victory → GameMode 关闭 Gameplay 输入，HUD 显示结算 → Retry 按钮经 PlayerController 请求 GameMode → GameMode 重新加载当前关卡。
+**战斗音乐**：GameMode 确认战斗启动后创建并持有一份 2D AudioComponent，以 `CombatMusicVolume`（默认 0.25）在 `CombatMusicFadeInSeconds`（默认 1 秒）内淡入 `CombatMusic`。循环由声音资产配置；音乐不跨关卡持续。首个有效胜负报告立即启动 `CombatMusicFadeOutSeconds`（默认 0.5 秒）的淡出并停止播放，不等待死亡表现或结算 UI。EndPlay 停止并销毁所属组件；重试的新 GameMode 在再次进入战斗时从头播放。未配置音乐或音频设备不可用时，战斗流程照常运行。音乐的 SoundClass、循环及实际听感由资产配置和 GameLevel 验收决定。
+
+2026-10-01：UE 5.8.2 的 AshenOathEditor Development 构建通过；`AshenOath.Combat.Lifecycle` 五项测试通过。CombatMusic 使用静音的 Procedural SoundWave 和运行中的音频设备，验证战斗开始淡入、重复入口不重播、胜利/失败在结算 UI 前开始淡出、淡出完成后停止、淡出中退出释放组件，以及未配置音乐时照常开始战斗。测试输出静音且不渲染；实际音乐素材和 GameLevel 听感尚待配置后验收。
+
+**结算到重试**：玩家或 Boss 的首个死亡报告立即提交唯一 Defeat/Victory → GameMode 关闭 Gameplay 输入、停止存活一方的战斗行为并隐藏鼠标，世界继续更新 → CombatDeath 的死亡 Montage 正常结束或中断后广播 DeathPresentationFinished，Character 转发给 GameMode；未配置或播放失败也发出一次结束通知 → GameMode 等待 DeathPresentationHoldSeconds（默认 0.5 秒）后广播 MatchPresentationReady，HUD 才显示结算并开放鼠标/Retry → Retry 按钮经 PlayerController 请求 GameMode → GameMode 重新加载当前关卡。HUD 初始化同时检查展示是否就绪，胜负通知本身不再触发 UI。退出时解除动画监听并清除展示计时器。
 
 **Boss 第一阶段循环**：StateTree 请求 Boss 决策；Decision Component 拍下目标距离、朝向、可用攻击及近期历史的 Snapshot。近战招式只在近战范围内候选，DashSwing 只在最小与最大起冲距离之间且超过停止距离时进入候选；冷却中的招式被排除。组件对候选计算基础分减去距离、朝向和近期使用惩罚，按分数排序，同分由可复现的随机流打破；没有可用招式时选择接近或等待。StateTree 消费待执行 Decision；攻击前组件复核目标与距离，经 Character 依排名请求 GAS 激活，仅在请求被拒绝时尝试下一个候选；成功受理后才更新历史与冷却。DashSwing 的 Ability Task 临时提高移速并逐帧朝玩家当前位置移动，进入挥击距离后切换动画并建立 Melee 会话 → 攻击 Task 按本次请求句柄等待结果 → Recovery Task 保留无伤害间隔。树退出时 Task 先解除监听，再按句柄取消自己持有的攻击。当前只覆盖第一阶段四招，阶段状态尚未接入。
 

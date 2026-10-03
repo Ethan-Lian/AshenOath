@@ -1,4 +1,4 @@
-﻿#include "UI/AshenOathHUD.h"
+#include "UI/AshenOathHUD.h"
 
 #include "Characters/AshenOathPlayerCharacter.h"
 #include "Game/AshenOathGameMode.h"
@@ -47,18 +47,24 @@ void AAshenOathHUD::BeginPlay()
 	BoundGameMode = GameMode;
 
 	ActiveBossChangedHandle = GameMode->OnActiveBossChanged().AddUObject(this, &AAshenOathHUD::HandleActiveBossChanged);
-	MatchOutcomeChangedHandle = GameMode->OnMatchOutcomeChanged().AddUObject(
+	MatchPresentationReadyHandle = GameMode->OnMatchPresentationReady().AddUObject(
 		this,
-		&AAshenOathHUD::HandleMatchOutcomeChanged
+		&AAshenOathHUD::HandleMatchPresentationReady
 	);
 	CombatStartedHandle = GameMode->OnCombatStarted().AddUObject(
 		this,
 		&AAshenOathHUD::HandleCombatStarted
 	);
+	IntroPlaybackChangedHandle = GameMode->OnIntroPlaybackChanged().AddUObject(
+		this,
+		&AAshenOathHUD::HandleIntroPlaybackChanged
+	);
 
 	// Initialize from a Boss that registered before the HUD.
+	HandleIntroPlaybackChanged(GameMode->IsIntroPlaying());
 	HandleActiveBossChanged(GameMode->GetActiveBoss());
-	HandleMatchOutcomeChanged(GameMode->GetMatchOutcome());
+	HandleMatchPresentationReady(GameMode->IsMatchPresentationReady()
+		? GameMode->GetMatchOutcome() : EAshenOathMatchOutcome::InProgress);
 }
 
 void AAshenOathHUD::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -81,20 +87,26 @@ void AAshenOathHUD::EndPlay(const EEndPlayReason::Type EndPlayReason)
 			GameMode->OnActiveBossChanged().Remove(ActiveBossChangedHandle);
 		}
 
-		if (MatchOutcomeChangedHandle.IsValid())
+		if (MatchPresentationReadyHandle.IsValid())
 		{
-			GameMode->OnMatchOutcomeChanged().Remove(MatchOutcomeChangedHandle);
+			GameMode->OnMatchPresentationReady().Remove(MatchPresentationReadyHandle);
 		}
 
 		if (CombatStartedHandle.IsValid())
 		{
 			GameMode->OnCombatStarted().Remove(CombatStartedHandle);
 		}
+
+		if (IntroPlaybackChangedHandle.IsValid())
+		{
+			GameMode->OnIntroPlaybackChanged().Remove(IntroPlaybackChangedHandle);
+		}
 	}
 
 	ActiveBossChangedHandle.Reset();
-	MatchOutcomeChangedHandle.Reset();
+	MatchPresentationReadyHandle.Reset();
 	CombatStartedHandle.Reset();
+	IntroPlaybackChangedHandle.Reset();
 	BoundGameMode.Reset();
 
 	if (RootWidget)
@@ -133,7 +145,15 @@ void AAshenOathHUD::HandleActivePlayer(APawn* NewPawn)
 	}
 }
 
-void AAshenOathHUD::HandleMatchOutcomeChanged(
+void AAshenOathHUD::HandleIntroPlaybackChanged(const bool bPlaying)
+{
+	if (RootWidget)
+	{
+		RootWidget->SetIntroPlaying(bPlaying);
+	}
+}
+
+void AAshenOathHUD::HandleMatchPresentationReady(
 	const EAshenOathMatchOutcome Outcome)
 {
 	if (RootWidget)
