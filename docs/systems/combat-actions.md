@@ -1,141 +1,55 @@
 # 战斗动作与伤害
 
-当前实现由 GameplayAbility 驱动玩家轻击连招、蓄力重击、前/后闪避和三次治疗，以及 Boss 第一阶段的单次挥击、连击、蓄力重挥和突进后挥击，并已接入普通闪避无敌判定、基础受击与死亡清理。游戏模块的 `UAshenOathActionData` 只保存配置，不保存执行状态；旧 `UCombatActionComponent` 及其执行句柄已经删除。
+生命周期分工见 [ADR-0003](../adr/0003-gameplay-ability-owns-combat-action-lifecycle.md)。实现：[Abilities](../../Source/AshenOath/Private/AbilitySystem/Ability)、[Melee](../../Source/AshenOathCombat/Private/Actions/CombatMeleeComponent.cpp)、[Damage](../../Source/AshenOathCombat/Private/Damage/CombatDamageComponent.cpp)。
 
-## 职责边界
+## 执行
 
-| 对象 | 当前职责 |
+Ability 从 Spec.SourceObject 读取 ActionData。CombatAbility 共享动作互斥与费用检查，死亡或硬直时拒绝激活。
+
+轻击：检查配置/资源 → 播放 Montage 并确认实例 → 建立 Melee 配置快照 → CommitAbility。通用 CostEffect 必须是 Instant；没有 CostEffect 可免费执行，成功扣费后的中断不退款。
+
+Montage 和 Effect 调用可能同步结束 Ability，返回后复核执行与会话。正常结束、失败和取消都进入 EndAbility，先结束 Melee 会话，再由 GAS 清理 Task。
+
+| Ability | 行为 |
 |---|---|
-| `UAshenOathCombatAbility` | 共享动作互斥、ActionData Cost 检查/应用和成功消耗通知；不包含攻击或闪避分支 |
-| `UAshenOathMeleeAttackAbility` | 玩家与 Boss 近战 Ability 的抽象执行层；拥有 Montage Task、动画来源身份、Cost 提交、Melee 会话和统一结束流程，不包含连招、蓄力或 Boss 选招状态 |
-| `UAshenOathComboAttackAbility` | 直接承载轻击连招；拥有 Combo Window、重复输入消费和 Montage Section 推进 |
-| `UAshenOathHeavyAttackAbility` | 与 Combo 并列继承 MeleeAttack；拥有按下、蓄力消耗、释放、伤害倍率和自动瞄准 |
-| `UAshenOathDodgeAbility` | 拥有一次闪避的方向/朝向策略快照、Montage、Cost、Travel/Recovery Task、Defense 窗口和统一结束流程 |
-| `UAshenOathHealAbility` | 原地播放 Cast Montage，只接受所属实例的完成 Notify；成功应用 Heal Effect 后才消耗一次治疗次数 |
-| `UAshenOathBossSingleSwingAbility` | 校验单次挥击起始 Section 并启动近战执行；复用 MeleeAttack 的 Montage、Cost、会话和清理流程，不决定接近、恢复或下一招 |
-| `UAshenOathBossComboAbility` | 按 ActionData 的 Section 顺序自动衔接两至三段挥击；整套只建立一次 Melee 会话和一次 Cost |
-| `UAshenOathBossChargedSwingAbility` | 前摇进入循环，按配置时间释放重挥；开始时提交 Cost，释放时才建立 Melee 会话 |
-| `UAshenOathBossDashSwingAbility` | 循环播放原地跑段，以临时加速的 CharacterMovement 追踪玩家；进入停止距离后切入挥击并建立 Melee 会话，追击段无伤害窗口 |
-| `UAbilityTask_BossDashChase` | 逐帧将移动输入指向玩家并拥有本次移速覆盖；到达、受阻或取消时停止自己的移动并恢复原移速 |
-| `UAbilityTask_ApplyCombatMovement` | 按动作时间执行 Sweep 位移，接管并恢复 MovementMode/RootMotionMode |
-| `UAshenOathAbilityTask_RecoverFacing` | 在闪避末段按目标 Actor 的实时位置平滑恢复锁定朝向；目标失效或 Ability 结束时随即清理 |
-| `UCombatDefenseComponent` | 保存闪避无敌窗口和来源句柄，仅增加/移除自己持有的窗口 Tag |
-| `UAshenOathStaminaRecoveryComponent` | 保存跨动作的延迟计时器和恢复 Effect；成功消耗重启，拒绝请求不触碰 |
-| `UCombatMeleeComponent` | 保存本次攻击的配置与动画来源快照；验证 Notify 来源，连续扫掠并在窗口内去重 |
-| `UAnimNotifyState_CombatHitWindow` | 从 UE 动画回调提取 Mesh、动画来源、Montage 实例 ID 和 Notify 实例 ID；不保存战斗状态 |
-| `UCombatDamageComponent` | 在目标侧拒绝终止目标；按命中时刻区分闪避无敌和其他来源无敌，经 GAS 应用伤害 Effect 并广播解析结果 |
-| `UCombatHitReactionComponent` | 监听目标的 Applied 结果，取消可中断动作，拥有短硬直 Tag、计时器和基础受击 Montage |
-| `UCombatDeathComponent` | 观察注入的生命属性，拥有一次性终止 Tag、死亡开始/表现结束事件和基础死亡 Montage |
-| `UAshenOathActionData` | 所有动作共享的 Montage、播放速率、可选起始 Section 和 Cost Effect |
-| `UAshenOathMeleeActionData` | 近战伤害 Effect 和扫掠参数；Boss 单次挥击直接使用此类型 |
-| `UAshenOathComboAttackData` / `UAshenOathHeavyAttackData` | 在项目模块中分别扩展连招段落与重击蓄力配置，继承近战数据 |
-| `UAshenOathDodgeActionData` | 闪避位移和无敌窗口配置 |
+| ComboAttack | 每个 Combo Window 接受一次点按或持续按住的输入，推进下一 Section；整套提交一次费用，最后一段不循环 |
+| HeavyAttack | 按实际耐力消耗比例计算伤害；松键、满蓄或耐力耗尽走同一释放入口，未满 1 秒则取消，已耗耐力不退 |
+| BossSingleSwing | 按配置播放单次挥击 |
+| BossCombo | 按 Section 顺序衔接两至三段，整套一个会话、一次费用 |
+| BossChargedSwing | 开始扣费，蓄力循环结束后进入挥击，释放时才建 Melee 会话 |
+| BossDashSwing | 临时提高移速并追踪玩家，进入 StopDistance 后停止、恢复移速，再建会话挥击；追击段无伤害 |
+| Heal | 原地播放 Montage，所属完成 Notify 预留次数 → 应用 Instant Heal Effect → 成功扣次数，失败释放预留 |
 
-`AshenOath` 游戏模块拥有动作 DataAsset、角色与 Ability，并把配置转换为 Combat 调用参数；`AshenOathCombat` 只依赖引擎和 GAS 公共接口，不引用项目 DataAsset、玩家、Boss、项目 AttributeSet、原生 Tag 或 UI。
+重击使用 ChargeCostEffect，通用 CostEffect 留空；释放时不再扣第二笔。蓄力中可被闪避取消，已进入释放阶段则不可。释放时只在 Boss 有效、未死亡且满足距离、角度和视线条件时校正一次水平朝向，不要求锁定。
 
-治疗次数由玩家 Character 持有，初始为三次；新 Character 随重试关卡重新创建。Heal Ability 在整个执行期间持有 `State.MovementLocked`，由 Character 立即停止现有移动并拒绝新移动输入。所属 Montage 的完成 Notify 才能尝试预留一次使用、应用配置的 Instant Heal Effect，并在应用成功后扣除次数；重复或旧实例 Notify 被拒绝，Notify 前中断不回血、不扣次数。UI 只订阅 Health、Stamina 与剩余次数，不参与激活或扣费判断。正常结束、取消和死亡时 GAS 释放移动锁。
+治疗次数由玩家 Character 持有，初始三次；提交前中断不回血、不扣次数，旧实例和重复 Notify 无效。新角色恢复初始次数。
 
-## 轻击启动事务
+## 命中窗口
 
-轻击按以下顺序执行：
+Melee Session Handle 用于精确结束会话；Mesh、AnimInstance、Montage 和播放实例 ID 用于核对 Notify 来源，窗口另核对 Notify 实例 ID。
 
-1. Character 请求已授予的 AbilitySpec；GAS 检查动作互斥、死亡/硬直 Tag、配置完整性和当前资源。轻击激活后在整个 Ability 生命周期持有 `State.MovementLocked`，由 Character 清除已有速度并拒绝新的移动输入，镜头观察不受影响。
-2. Ability 创建并启动 `UAbilityTask_PlayMontageAndWait`。播放失败会同步结束 Ability，此时尚未提交 Cost。
-3. GAS 确认该 Ability 正在播放配置的 Montage 后，Ability 读取实际 `FAnimMontageInstance::InstanceID`，让 Melee 建立检测会话并复制伤害、半径和骨骼链。
-4. 会话建立成功后调用 `CommitAbility`。Cost 必须是 Instant GameplayEffect；应用成功一次后才允许本次攻击继续。
-5. Cost Effect 的同步回调可能导致死亡或取消，因此返回后重新检查 Ability 与 Melee 会话是否仍属于本次执行。
+NotifyBegin 保存配置与采样点，Tick 扫掠采样点前后帧轨迹并补扫相邻点之间的武器主体。目标在提交伤害前加入窗口内集合，防止同步重入造成重复命中。
 
-无 Cost 的动作可免费执行。资源不足在播放前拒绝；Montage 或 Cost 应用失败会停止本次执行且不留下 Melee 状态；成功扣费后的中断不退款。`TryActivateAbility` 的返回值只表示 GAS 是否接受请求，不代表整个动画/费用事务已经完成。
+每个 Combat Hit Window 独立配置受击资格，开窗时保存并随伤害请求传递；不按 Section 名或连段序号推断。
 
-当前项目是权威单机执行，没有预测契约；这些战斗 Ability 都使用 `ServerOnly` 执行策略。
+## 闪避
 
-普通 Combo 支持点按与长按混合：按下立即启动第一段；松开后仅在窗口内再次点按才接下一段；保持按住时，每个所属 `PlayerComboWindow` 打开后自动接下一段。每个窗口最多消费一次，整套仍只提交一次 Cost，最后一段不循环回第一段。松开停止后续自动接招，但不会撤回窗口已经接受的下一段；结束、取消和中断清除本次持有状态，禁止输入或失去占有也会转发松开。
+Montage 确认、Cost 成功后，以同一个世界时间启动 Defense 窗口与位移。Defense 先分配句柄交给 Ability，再激活窗口；只增加和移除自己的一层无敌 Tag。
 
-连招的每个 `PlayerComboWindow` 必须完整落在对应 Montage Section 内，并与相邻窗口留出间隔。窗口开始时 Ability 根据当前 Section 决定下一段；跨越 Section 边界或彼此重叠会使下一段的开窗被忽略。
+Travel 沿激活时冻结的世界方向执行 Sweep，忽略动画根位移；Walking/NavWalking 下贴坡、StepUp 和贴地，墙体或过高台阶截断位移，受阻距离不补偿。结束/中断恢复 MovementMode 与 RootMotionMode。
 
-Boss 近战复用同一执行基类。StateTree 经 Boss Character 的稳定入口调用 Decision Component 选招，再由 Character 的请求身份接口激活 GAS。请求若在 `TryActivateAbility` 内同步结束，直接返回成功或失败；仍在执行时，Task 再订阅携带请求句柄的结束事件。Task 退出先解除监听，再按句柄取消自己的攻击，因此旧请求不能取消下一招。Decision Component 保存可编辑的四招 Utility 配置、近期使用与冷却历史；Decide 拍下距离、朝向和可用攻击，筛选距离与冷却资格，再按基础分减距离、朝向、近期使用惩罚排序，同分由种子随机流决定。执行前复核目标与距离；被拒绝才尝试下一名，成功受理才记录历史。无候选时按距离接近或等待。
+前/侧翻朝向位移方向，Travel 结束后用独立 Recovery Task 平滑转回锁定目标的实时方位；后翻保持原朝向，不创建 Recovery。Montage 提前结束会清理恢复，不延长动作锁。
 
-第一阶段玩家超过默认 300 cm 近战范围时，只有距离大于默认 500 cm 且不超过默认 1000 cm、DashSwing 配置与资源可用且不在冷却中，突进才进入候选；没有可用突进就正常寻路接近 300 cm。突进开始后，Ability 循环播放不含位移的 `DashSection`；追击 Task 将 `MaxWalkSpeed` 临时乘以 `DashSpeedMultiplier`，每帧按玩家实时位置向 CharacterMovement 提交移动输入并面向玩家。进入 `StopDistance` 后停止移动并恢复原移速，Ability 按玩家当前位置转向、建立 Melee 会话并跳到 `SwingSection`。起冲后的追击 Task 不设最大时长或位移距离；目标失效、持续受阻与动作取消均结束追击，不会在射程外挥击。
+## 伤害与受击
 
-GameLevel 当前使用 Decision Component 的四招默认值；这是本轮实机流程测试所用的初始平衡值，后续手感调整可直接修改 Boss 的组件配置。四招基础分均为 `2.0`，距离权重均为 `1.0`。
+Damage 先拒绝已终止的来源/目标，再检查无敌：ASC 存在 Defense 自持层之外的无敌时返回 OtherInvulnerable，否则按 HitTimeSeconds 查询闪避窗口，命中则返回 DodgeInvulnerable；其余经 GAS 应用伤害 Effect。
 
-| 招式 | 偏好距离 | 距离衰减 | 朝向权重 | 近期使用惩罚 | 冷却 |
-|---|---:|---:|---:|---:|---:|
-| SingleSwing | 170 cm | 300 cm | 0.50 | 0.75 | 0.75 s |
-| Combo | 210 cm | 300 cm | 0.75 | 1.00 | 2.50 s |
-| ChargedSwing | 260 cm | 300 cm | 0.90 | 1.00 | 4.00 s |
-| DashSwing | 700 cm | 450 cm | 0.25 | 1.00 | 5.00 s |
+只广播 Applied 和两类无敌结果，Invalid 不广播。HitReaction 只响应有受击资格的 Applied：建立短硬直 → 取消可中断动作 → 停止移动并播放受击 Montage；结束只清理自身状态。
 
-本阶段自动化运行开启 `LogAshenOathBossUtility Verbose` 后记录了距离 900、150 cm 和冷却后的决策；210、260 cm 两行按同一配置与评分公式计算，并在定向测试中加入了对应断言。分数仅对应这些快照，不代表整场实机战斗的分布：
+死亡、反馈和结算见 [对局流程](match-flow.md)，Boss 请求交接见 [Boss AI](boss-ai.md)，耐力恢复见 [GAS](ability-system.md)。
 
-| 快照 | 合格候选及分数 | 选中原因 |
-|---|---|---|
-| 距离 900 cm，正面 | DashSwing 1.56 | 近战三招超出范围；DashSwing 的基础分 2.00 减距离惩罚 0.44 后为唯一候选 |
-| 距离 150 cm，正面 | SingleSwing 1.93、Combo 1.80、ChargedSwing 1.63 | SingleSwing 距离惩罚仅 0.07，得分最高 |
-| 距离 210 cm，正面（计算值） | Combo 2.00、SingleSwing 1.87、ChargedSwing 1.83 | Combo 正处偏好距离，距离惩罚为零 |
-| 距离 260 cm，正面（计算值） | ChargedSwing 2.00、Combo 1.83、SingleSwing 1.70 | ChargedSwing 正处偏好距离，距离惩罚为零 |
-| SingleSwing 请求受理后的下一次近距离决策 | Combo 1.80、ChargedSwing 1.63 | SingleSwing 处于冷却中，被资格筛选排除 |
+## 踩坑/变更
 
-同一测试把 Boss 转至背对目标时，SingleSwing 朝向惩罚从 0.00 变为 0.50，得分从 1.93 降为 1.43；评分依据可从日志逐项复核。每次 Decide 重新取 Snapshot，执行前再复核目标和距离；StateTree 的攻击 Task 只保留自己的请求句柄，根据同步结果或带句柄的异步结束事件报告成功或失败，树再按转换进入 Recovery。Task 退出时先解除监听再按句柄取消。
-
-## 玩家蓄力重击
-
-重击从按下右键进入蓄力开始，至少持续 1 秒才能释放戳棍。未满 1 秒松开右键或因耐力耗尽触发自动释放时，Ability 取消本次动作，不建立 Melee 会话，并清理蓄力计时器、Montage 与移动锁；已经消耗的蓄力耐力不退款。满 1 秒后松键可释放，达到最大蓄力时长仍自动释放；最大蓄力时长必须不小于 1 秒。最低时长在 HeavyAttack Ability 的统一释放入口检查，按世界游戏时间计算，不受 Montage 播放速率影响。
-
-## Notify 与检测会话
-
-Melee 会话拥有两类身份：
-
-- `FCombatMeleeSessionHandle` 只在 Melee 与本次生命周期拥有者之间传递，用于精确结束配置快照。
-- UE 的 Montage 实例 ID 标识真实动画播放。Notify 必须同时匹配会话保存的 Mesh、AnimInstance、Montage 及该实例 ID。
-
-普通 Notify 从 `FAnimNotifyEventReference` 的 `FAnimNotifyMontageInstanceContext` 读取 Montage 实例 ID；Branching Point 则使用 `FBranchingPointNotifyPayload`。Notify State 启用 `NoMergeOnConcurrentPlay`，防止同一动画的并发播放共享 Notify 生命周期。
-
-验证通过的 NotifyBegin 记录 Notify 实例并保存各扫掠点的世界位置；NotifyTick 扫过上一帧到当前帧，并补扫相邻采样点之间的武器主体。目标在提交伤害前加入窗口内集合，因此 GAS 同步回调重入或重复 Tick 都不会对同一目标再次提交。NotifyEnd 只有在 Montage 和 Notify 两重身份仍匹配时才关窗。
-
-旧 Montage 的 Begin/Tick/End 即使晚于下一次攻击到达，也因播放实例 ID 不匹配而被忽略。Ability 结束并不依赖 NotifyEnd：正常完成、取消、中断、死亡和 EndPlay 都会显式结束 Melee 会话。
-
-## 闪避位移与无敌
-
-Controller 保存最近的二维移动意图；按下闪避时 Character 选择前翻或后翻 Data Asset，并按当前控制视角把意图冻结为世界水平方向。无方向输入时沿角色前方闪避。
-
-代码位移按动作相对时间累计目标水平距离，通过 CharacterMovement 的 Sweep 移动，所以阻挡会截断位移。原模式为 Walking/NavWalking 时，Task 查询可行走地面，按坡面调整 Z 位移，并通过 UE `StepUp` 跨过允许踏上的低矮障碍、通过 `AdjustFloorHeight` 贴合地面；水平朝向和距离预算不改变。墙体、不可踏上的障碍与过高台阶仍会阻挡，受阻距离不在后续帧补偿。位移段临时保存并切换 MovementMode，忽略 Montage 根位移；结束或中断时恢复原模式和 AnimInstance 的 RootMotionMode。
-
-当前本地配置为：
-
-| 动作 | 位移 | 位移时长 | 无敌窗口 |
-|---|---:|---:|---:|
-| `DA_Player_Dodge_Fwd` | 450 cm | 0.48 s | 0.10～0.40 s |
-| `DA_Player_Dodge_Bwd` | 360 cm | 0.42 s | 0.09～0.37 s |
-
-角色为前后配置分别持有一个 AbilitySpec，两者复用同一 Dodge Ability 类，并用 Spec 的 SourceObject 指向各自 ActionData。Character 在激活前把输入转换为世界方向，并同时选择朝向策略；侧向、前向和斜向前翻朝位移方向转身，后向输入使用后翻资源并保持当前目标朝向。Ability 激活时立即复制两项参数，后续视角和输入变化不改变本次闪避。
-
-闪避在整个 Ability 生命周期持有 `State.MovementLocked`，阻止自由移动或锁定系统与 Dodge 同时改变身体朝向。动作事务建立后，需要对齐的前/侧翻先进入 Travel：角色朝向冻结的位移方向，代码位移沿同一方向执行；到达 `MovementStartTime + MovementDuration` 后进入 Recovery，独立 Task 从当时朝向开始，以 SmoothStep 沿最短 Yaw 路径逐帧转向锁定目标的实时方位。恢复时长由 Dodge Ability 的 `FacingRecoveryDuration` 配置，默认 `0.4s`，不随位移时长缩短。没有锁定目标时只执行 Travel；后撤翻滚使用 `PreserveCurrentFacing`，始终不创建 Recovery。镜头可继续追踪锁定目标。
-
-Travel 与 Recovery 顺序执行，恢复利用 Montage 的落地尾段；该分界由位移配置决定，不检测动画脚部触地。调整 Montage 的 StartSection、播放速率或位移配置时，应保证实际剩余播放时间覆盖 Recovery。Montage 仍拥有正常结束语义，不为回正延长动作锁定；提前结束或中断会清理未完成的恢复，不强制跳到目标朝向。结束或取消时 GAS 销毁两个 Task 并移除 `State.MovementLocked`，Character 再接回自由移动或锁定朝向控制权。
-
-Montage 播放确认且 Cost 提交成功后，Ability 以同一个世界时间创建 Defense 窗口和位移 Task。Task 在整段执行期间忽略动画根位移，位移段临时切换 MovementMode，通过 `SafeMoveUpdatedComponent` 逐帧 Sweep；墙体只允许碰撞有效的位移量，结束或中断恢复先前模式。
-
-Defense 先分配来源句柄，再由 Ability 保存句柄并激活窗口，避免添加 loose Tag 的同步回调先于所有权建立。窗口开始时只增加自己持有的一份 `State.Invulnerable`，结束时只移除这一份。动作取消、死亡和退出均撤销自己持有的窗口。
-
-Damage 以 `HitTimeSeconds` 查询 Defense 的世界时间范围。命中时间落在闪避无敌窗口内时返回 `DodgeInvulnerable`，不应用伤害 Effect；窗口内的连续命中同样免伤。若 ASC 还有额外无敌计数，则返回 `OtherInvulnerable`。来源或目标已有终止 Tag 时，请求直接返回 `Invalid`，不再应用 Effect。
-
-## 受击、死亡与结算边界
-
-CombatDamage 在解析每次请求后同步广播结果。HitReaction 只响应声明 `bCanTriggerHitReaction` 的 `Applied`：先拥有短硬直 Tag，再取消带可中断动作 Tag 的 Ability、停止移动并播放配置的受击 Montage；计时结束、死亡或 EndPlay 都只清理自己拥有的 Tag 和计时器。
-
-每个 `Combat Hit Window` Notify State 独立配置 `Can Trigger Hit Reaction`。NotifyBegin（包括 Branching Point）将此配置传给 Melee，Melee 验证动画来源身份后保存到本次窗口，再随伤害请求传给目标；窗口关闭或会话结束时清理。资格不依赖 Section 名称、段数或按键次数，同一 Section 的多个窗口可以分别配置。关闭时正常扣血，但不取消目标动作、不启动受击表现。当前玩家四段普攻的前三段窗口关闭、末段开启，蓄力重击与 Boss 攻击窗口开启；新建窗口默认开启，需要按攻击设计调整。
-
-CombatDeath 由游戏模块注入生命属性和终止 Tag，初始化后监听 ASC 属性变化。生命首次降到 0 时，它先记录不可逆死亡状态并添加自己拥有的一份终止 Tag，然后广播 `DeathStarted`，最后播放死亡 Montage。玩家/Boss 宿主分别在回调中清理自身动作、Melee、Defense、Reaction、恢复、AI 和移动，再把死亡报告给 GameMode；通用 Combat 模块不引用具体角色、GameMode 或 UI。
-
-死亡 Montage 的所属播放实例结束（含中断）后，CombatDeath 一次性广播 `DeathPresentationFinished`；未配置 Montage 或播放失败时，在 `DeathStarted` 广播结束后立即报告表现结束。Character 将此通知转发给 GameMode，只有决定本局结果的角色能够开放结算展示。GameMode 的 `MatchOutcomeChanged` 仍即时报告胜负，HUD 改为观察 `MatchPresentationReady`：动画结束后再停留 `DeathPresentationHoldSeconds`（默认 0.5 秒）才显示 UI、鼠标和 Retry。等待期间关闭 Gameplay 输入并停止双方战斗行为，动画、死亡音效和特效继续运行；Feedback 不承担结算计时。EndPlay 解除所属 Montage 委托、Character/HUD 订阅和 GameMode 计时器，避免退出后触发展示。
-
-2026-10-01：UE 5.8.2 的 AshenOathEditor Development 构建通过；`AshenOath.Combat.Lifecycle` 的 Death、DeathPresentation、MatchOutcome 和 BossIntro 四项自动化测试通过。DeathPresentation 使用实际玩家/Boss Blueprint，覆盖 Montage 正常结束、中断、缺失、播放失败和退出清理；MatchOutcome 验证胜负即时锁定、展示延后、来源身份与重复通知隔离、等待期间拒绝 Retry。测试在无渲染环境运行，GameLevel 中 UI 遮挡与死亡特效的实际观感尚待实机验收。
-
-## 恢复与清理
-
-玩家默认在最后一次成功消耗后等待 1 秒，由独立恢复组件启用蓝图配置的 `GE_Player_StaminaRecovery`：无限期、0.1 秒周期，每周期恢复 2 点耐力。轻击和闪避通过共享 Ability Cost 契约只在 Effect 成功应用后通知恢复组件。新一笔成功消耗会移除旧恢复 Effect 并重新计时；资源不足、播放失败和活动中重触发都不会打断已有恢复。
-
-轻击的所有出口汇入 `EndAbility`：先撤销 Ability 保存的会话句柄，再让 Melee 按稳定快照清理窗口与配置，最后由 GAS 结束 Task/停止 Montage。这样 Montage 停止过程中同步到达的 Notify 或 Task 回调只能看见已失效的会话。
-
-闪避的所有出口同样汇入 `EndAbility`：先撤销 Ability 保存的 Defense 句柄，再让 Defense 清除自己拥有的窗口；随后 GAS 销毁位移和 Montage Task，位移 Task 恢复 MovementMode 与 RootMotionMode。死亡广播后由宿主取消战斗 Ability 并复位各 Combat 组件；退出还会解除属性/伤害监听并最终清理 ASC ActorInfo。
+- SpecHandle 标识授予记录，不能隔离旧动画回调；旧 Montage 的 Notify 要靠播放实例 ID 拒绝。
+- Combo Window 必须落在所属 Section 内，相邻窗口留间隔；跨段或重叠会漏掉下一次开窗。
+- 闪避 Montage 的尾段要覆盖 FacingRecoveryDuration；StartSection、播放速率或位移时长变化后需一起核对。

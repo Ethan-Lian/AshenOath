@@ -1,74 +1,45 @@
-# 玩家控制与自由镜头
+# 玩家控制与镜头
 
-当前系统实现键鼠 Move/Look/Dodge、相对视角移动和第三人称自由镜头。Controller 处理设备输入与映射归属并保存最近移动意图，Character 处理角色移动约束与闪避方向转换，CharacterMovement 执行移动。
+职责划分见 [ADR-0002](../adr/0002-player-input-and-character-boundary.md)。实现：[Controller](../../Source/AshenOath/Private/Player/AshenOathPlayerController.cpp)、[Player](../../Source/AshenOath/Private/Characters/AshenOathPlayerCharacter.cpp)、[Targeting](../../Source/AshenOathCombat/Private/Targeting/CombatTargetingComponent.cpp)。
 
-设计理由见 [ADR-0002](../adr/0002-player-input-and-character-boundary.md)，系统关系见 [架构总览](../arch/architecture.md)。实现见 [PlayerController](../../Source/AshenOath/Private/Player/AshenOathPlayerController.cpp) 与 [Player Character](../../Source/AshenOath/Private/Characters/AshenOathPlayerCharacter.cpp)。
+## 输入
 
-## 入口与运行链
+Controller 每次取当前 Pawn，检查本地控制和 Gameplay 输入开关后转发。键位由 GameplayMappingContext 资产配置。
 
-```text
-MoveAction (Axis2D / Triggered)
-  → PlayerController.HandleMove
-  → 当前玩家 Character.RequestMove(二维意图, ControlRotation.Yaw)
-  → 世界前/右方向上的 AddMovementInput
-  → CharacterMovement
-
-LookAction (Axis2D / Triggered)
-  → PlayerController.HandleLook
-  → AddYawInput / AddPitchInput
-  → ControlRotation
-  → SpringArm
-  → Camera
-
-DodgeAction (Boolean / Started)
-  → PlayerController.HandleDodge（读取最近 Move 意图）
-  → 当前玩家 Character.RequestDodge
-  → 选择前/后翻 AbilitySpec，并把二维意图冻结为世界方向
-  → Dodge GameplayAbility
-  → Travel 位移 Task / CharacterMovement
-  → 锁定时的 Recovery 朝向 Task
-
-HealAction (Boolean / Started)
-  → PlayerController.HandleHeal
-  → 当前玩家 Character.RequestHeal
-  → Heal GameplayAbility（执行期间锁定移动）
-```
-
-Controller 的 Move/Look 回调先检查本地控制、对应输入未被忽略及当前 Pawn 有效。每次调用读取当前 Pawn，不长期缓存之前控制的身体。
-
-## 输入绑定与映射生命周期
-
-输入组件就绪和完成占有均会触发映射检查；注册与清理须允许重复调用。
-
-| 生命周期入口 | 项目中的处理 |
+| 输入 | 转发 |
 |---|---|
-| `SetupInputComponent` | 验证 Enhanced Input 组件及 Context；分别校验并绑定 Move/Look/ComboAttack/HeavyAttack/Heal/Dodge/LockOn，缺少单个动作不会禁用其他输入；按 InputComponent 去重绑定并检查映射 |
-| `OnPossess` | 父类建立控制关系后检查映射；本地玩家使用 GameOnly 输入模式并隐藏光标 |
-| `OnUnPossess` / `EndPlay` | 清理本 Controller 注册的映射 |
+| Move | 二维意图与 ControlRotation.Yaw；Completed / Canceled 清零最近意图 |
+| Look | 更新 ControlRotation；锁定时拒绝手动 Look |
+| Combo / Heavy | Started 转发按下，Completed / Canceled 转发松开 |
+| Dodge | 携带最近移动意图 |
+| Heal / LockOn | 请求治疗 / 切换锁定 |
 
-映射优先级为 `0`，注册遵循以下约定：
+SetupInputComponent 按 InputComponent 去重绑定；它与 OnPossess 都检查映射是否就绪。仅本地输入、绑定和预期 Pawn 均有效时注册专用 Context。
 
-- 仅在本地输入对象就绪、当前 InputComponent 已绑定且正在控制预期玩家角色时安装；条件失效则清理旧注册。
-- 记录安装时的 Subsystem、PlayerInput 和 Context。记录与当前对象一致且映射存在时不重复安装；不接管没有归属记录的已有映射。
-- 移除前核对 Subsystem 仍使用安装时的 PlayerInput，避免旧 Controller 清掉新输入对象的映射；随后重置弱引用记录。
+关闭 Gameplay 输入、UnPossess 和 EndPlay 清理本 Controller 的映射并转发轻击松开；关闭输入或 UnPossess 同时清零移动意图。重击没有额外松开转发，演出准备、对局结束和 Character 退出通过取消 Ability 清理。
 
-专用 Context 只允许一个管理者；注册记录不提供多系统共享或引用计数。当前也不支持同一 InputComponent 上运行时替换 Move/Look 资产后自动重绑。
+## 移动与朝向
 
-Move 的 Completed/Canceled 会把最近意图清零；UnPossess 也会清零，避免新 Pawn 的第一次中立闪避复用旧身体的输入。闪避位移和无敌不由输入或动画直接执行，生命周期见 [战斗动作与伤害](combat-actions.md)。
+RequestMove 的 X = 右、Y = 前。自由移动使用参考 Yaw，锁定移动使用 Character 的 Forward / Right，再由 CharacterMovement 执行。
 
-ComboAttack 的 Started 转发 `RequestComboAttackPressed`，Completed/Canceled 转发 `RequestComboAttackReleased`。按住状态由当前 Combo Ability 执行持有，在每个所属 Combo Window 开始时消费一次，支持点按与长按混合。禁止 Gameplay 输入、UnPossess 和 EndPlay 均向当前 Pawn 转发松开，避免动画仍在执行时继续自动接招。
+无 Controller、销毁中或带 Dead / Staggered / MovementLocked 时拒绝移动。移动锁或硬直首次加入时立即清除输入和速度，并暂停移动系统对身体朝向的驱动。
 
-## 移动与镜头的坐标关系
+自由时启用 OrientRotationToMovement；锁定且动作未接管时启用 UseControllerDesiredRotation。死亡、硬直或移动锁期间关闭两者，动作自己的转向见 [战斗动作](combat-actions.md)。
 
-`RequestMove` 接收 `X = 右、Y = 前` 的二维移动意图和参考 Yaw，将意图转换为世界水平方向后交给 CharacterMovement。无 Controller、正在销毁，或带 `State.Dead` / `State.MovementLocked` 的角色拒绝新移动请求。
+闪避按输入后向锥选择前/后配置，无输入沿角色前方；通常按控制视角换算世界方向。锁定纯侧闪改用目标连线的切线，并按 LockedSideDodgeInwardAngle 向内偏转，目标水平重合时沿原方向。
 
-攻击、闪避和治疗 Ability 激活期间持有 `State.MovementLocked`。角色在该状态首次加入时立即清除待处理移动输入和现有速度，并暂停自由移动或锁定系统对身体朝向的驱动。攻击和原地治疗保持动作开始时的朝向；前/侧闪避在整个 Travel 期间对齐位移方向，再在位移结束后通过独立时长的 Recovery 平滑恢复锁定目标朝向；后撤闪避保持原朝向。Ability 正常结束、取消或中断时由 GAS 自动移除该状态。
+## 锁定与镜头
 
-锁定时，纯侧向输入（`X != 0`、归一化后的 `Y` 近零）以角色到目标的水平连线为前向，从左右切线向目标内偏 `LockedSideDodgeInwardAngle`。该角度由前闪 ActionData 配置，字段默认 `15°`，当前 `DA_Player_Dodge_Fwd` 配置为 `36°`，范围 `0–45°`。方向在请求时计算并由 Ability 冻结；目标移动和镜头平滑不会使 Travel 轨迹弯曲。水平位置重合时回退到原视角方向。自由闪避、前后输入及斜向组合输入仍沿原规则处理。该偏角只保证起步向内，不保证任意初始距离和翻滚长度下的落点都更接近目标。
+已有目标时切换输入解除锁定；没有目标时，仅在战斗已开始、玩家未死亡时尝试锁定 GameMode 当前 Boss。没有扫描、切换目标或遮挡筛选。
 
-| 旋转对象 | 当前原生配置 | 作用 |
-|---|---|---|
-| Character | 不直接使用 Controller 的 Pitch/Yaw/Roll | 自由看向不强制身体跟转 |
-| CharacterMovement | `bOrientRotationToMovement=true`，`bUseControllerDesiredRotation=false` | 由移动方向驱动身体转向 |
-| SpringArm | `bUsePawnControlRotation=true`，开启碰撞检测 | 使用控制视角并处理镜头臂碰撞 |
-| Camera | 挂接 SpringArm Socket；不再单独使用 PawnControlRotation | 跟随镜头臂输出 |
+Targeting 用弱引用持有目标，检查同一 World、非自身、距离和注入的终止 Tag；Tick 复核，目标销毁/死亡/超距时清除。失去占有、关闭输入、对局结束和退出也解除锁定。
+
+锁定焦点取 Boss Bounds 中心加 0.2 × Extent.Z，从当前镜头位置算视角，经 RInterpTo 写入 ControlRotation。动作接管身体时镜头仍可追踪。
+
+SpringArm 使用 PawnControlRotation 并处理碰撞，Camera 挂接其 Socket，不再单独使用 PawnControlRotation。Character 不直接跟随 Controller 的 Pitch / Yaw / Roll。
+
+## 踩坑/变更
+
+- 映射清理要核对安装时的 Subsystem、PlayerInput 和 Context，旧 Controller 不能移除新输入对象的映射；专用 Context 只设一个管理者。
+- 同一 InputComponent 运行时替换 Action 资产不会自动重绑。
+- 侧闪向内偏角只保证起步方向，不能保证落点更靠近目标。

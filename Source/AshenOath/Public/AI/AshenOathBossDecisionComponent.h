@@ -118,13 +118,6 @@ public:
 
 	FAshenOathBossAttackStartResult RequestSelectedCombatAttack();
 
-#if WITH_DEV_AUTOMATION_TESTS
-	const FAshenOathBossCombatDecision& GetPendingDecisionForTesting() const
-	{
-		return PendingCombatDecision;
-	}
-#endif
-
 private:
 	bool CaptureFirstPhaseCombatSnapshot(
 		AActor* TargetActor,

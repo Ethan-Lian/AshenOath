@@ -109,11 +109,6 @@ public:
 		return SingleSwingEndedEvent;
 	}
 
-#if WITH_DEV_AUTOMATION_TESTS
-	// Supplies transient test configuration without exposing mutable runtime setup.
-	void GrantSingleSwingForTesting(UAshenOathMeleeActionData* ActionData);
-#endif
-
 	DECLARE_MULTICAST_DELEGATE_TwoParams(
 	FAshenOathBossAttackEndedEvent,
 	FAshenOathBossAttackRequestHandle,

@@ -1,89 +1,39 @@
-# GAS 与属性系统
+# GAS 与属性
 
-当前系统为玩家和 Boss 提供 ASC、生命/耐力属性、初始 GameplayEffect 入口和共享状态 Tag。单段近战伤害、动作耐力消耗、延迟恢复、普通闪避、基础受击与 Health 归零后的死亡/胜负/重试流程已接入。
-
-设计理由见 [ADR-0001](../adr/0001-character-owned-ability-system.md)，系统关系见 [架构总览](../arch/architecture.md)。
-
-## 所有权与入口
-
-| 入口 | 当前责任 |
-|---|---|
-| [Player Character](../../Source/AshenOath/Private/Characters/AshenOathPlayerCharacter.cpp) | 构造 ASC/AttributeSet 与 Combat 组件；刷新 ActorInfo、授予 Ability，注入项目 Tag/属性并响应死亡事件 |
-| [Boss Character](../../Source/AshenOath/Private/Characters/AshenOathBossCharacter.cpp) | 构造 ASC/AttributeSet、Combat、Decision 与 StateTree 组件，授予已配置的第一阶段近战 Ability，并协调请求身份、GAS、树和死亡的启动/退出 |
-| [Boss Decision Component](../../Source/AshenOath/Private/AI/AshenOathBossDecisionComponent.cpp) | 保存第一阶段 Utility 配置、近期使用与冷却历史、一次决策的观察和待执行排名；复核目标后经 Character 请求攻击 |
-| [AttributeSet](../../Source/AshenOath/Private/AbilitySystem/AshenOathAttributeSet.cpp) | 维护 Health/MaxHealth、Stamina/MaxStamina 的范围 |
-| [Native Gameplay Tags](../../Source/AshenOath/Private/GameplayTags/AshenOathGameplayTags.cpp) | 注册 `State.Dead`、`State.Invulnerable`、`State.Staggered` |
-
-两个角色通过 `IAbilitySystemInterface` 暴露 ASC，通过只读指针暴露属性集；OwnerActor 与 AvatarActor 均为宿主 Character。
+宿主选择见 [ADR-0001](../adr/0001-character-owned-ability-system.md)。实现：[Player](../../Source/AshenOath/Private/Characters/AshenOathPlayerCharacter.cpp)、[Boss](../../Source/AshenOath/Private/Characters/AshenOathBossCharacter.cpp)、[AttributeSet](../../Source/AshenOath/Private/AbilitySystem/AshenOathAttributeSet.cpp)。
 
 ## 初始化与退出
 
-### 玩家
-
-```text
-BeginPlay
-  → 配置 StaminaRecovery 的恢复 Effect/延迟
-  → 向 Defense/Damage/HitReaction/Death 注入项目 Tag 与 Health 属性
-  → 绑定 DeathStarted；初始属性就绪后初始化 Death 的 Health 观察
-PossessedBy(NewController)
-  → 父类建立占有关系
-  → InitAbilityActorInfo(this, this)
-  → ApplyInitialAttributes()
-  → 按 SourceObject 授予轻击、重击、治疗、前闪与后闪 AbilitySpec（重复占有不重复授予）
-UnPossessed
-  → 取消尚在执行的治疗 Ability
-EndPlay
-  → 解除 DeathStarted 与 Tag 监听
-  → 清理动作、窗口和恢复
-  → ClearActorInfo()
-```
-
-`PossessedBy` 刷新 ActorInfo 中的控制关系。同一实例重新被占有时，已成功应用的初始 Effect 不会重放。当前失去控制时没有专门刷新 ActorInfo，调用方不能依赖此期间缓存的 Controller 代表有效占有关系。
-
-玩家 Character 单独持有三次治疗使用次数和变更事件。Heal Ability 只在所属 Cast 完成 Notify 到达时预留一次使用、应用配置的 Instant GameplayEffect，并在成功后结算次数；HUD 只观察 Health 和次数。次数不属于 AttributeSet，重试重新加载关卡并创建新 Character 后恢复初始值。
-
-### Boss
-
-```text
-BeginPlay
-  → InitAbilityActorInfo(this, this)
-  → ApplyInitialAttributes()
-  → 授予单次挥击及其他已配置 ActionData 的 Boss 近战 Ability
-  → 初始化 Death 的 Health 观察并绑定 DeathStarted
-  → 注册到 GameMode
-GameMode 在入口演出结束后调用 Boss.StartCombatLogic()
-  → StateTreeComponent.StartLogic()
-EndPlay
-  → StateTreeComponent.StopLogic()
-  → 取消残留战斗 Ability、结清请求，再解除 Death/Ability 结束监听
-  → ASC.ClearActorInfo()
-```
-
-StateTree 关闭自动启动，由 Boss 显式控制顺序：初始属性、必需的单次挥击配置和 GameMode 注册成功后等待入口演出结束才启动；其余三招仅在各自 ActionData 配置后授予。退出时先停树，使活动 Task 先解除监听并按请求句柄取消自己的攻击，再清理 ASC。Boss 在激活前记录请求归属；同步完成直接随返回值交付，异步结束才按请求句柄广播。近期使用与冷却历史保存在随 Boss 存续的 Decision Component 中，避免 StateTree 离开攻击 State 后重建 Task 数据时重置。
-
-### 初始 Effect 的应用
-
-初始属性由角色配置的 GameplayEffect 应用，仅在应用成功后标记初始化完成。同一实例不重复初始化；未配置或应用失败时不会标记成功，也没有自动重试调度。
-
-## 属性规则
-
-生命和耐力采用同样规则：
-
-| 情况 | 当前处理 |
+| 入口 | 顺序 |
 |---|---|
-| Max 小于 0 | 收敛到 0 |
-| Current 小于 0 或大于 Max | 截断到 `[0, Max]` |
-| Max 降低到 Current 以下 | 同步降低 Current |
-| Max 提高 | 保留 Current，不补满，也不按百分比调整 |
+| 玩家 PossessedBy | 刷新 ActorInfo → 应用初始 Effect → 授予配置的 AbilitySpec；重复占有不重复授予 |
+| 玩家 BeginPlay / PossessedBy | 初始属性成功后初始化 Death 观察；不假定两个入口的先后顺序 |
+| 玩家 UnPossessed | 解除锁定、取消治疗；当前不专门刷新 ActorInfo |
+| 玩家 EndPlay | 清理监听、战斗 Ability、耐力恢复、Spec 句柄和 ActorInfo |
+| Boss BeginPlay | 初始化决策状态和 ActorInfo → 绑定结束/死亡事件 → 应用初始 Effect → 初始化 Death → 授予 Ability → 注册 GameMode |
+| Boss EndPlay | 停 StateTree → 取消残留 Ability、结清请求 → 解除监听并注销 Boss → ClearActorInfo |
 
-三个回调分别处理不同修改入口，不保证每次修改均依次触发：
+初始 Effect 只在成功后标记完成，同一实例不重放；缺失或失败没有自动重试调度。Boss 初始化失败、已经死亡或缺少必需的单次挥击配置时，不继续注册。
 
-- `PreAttributeChange`：限制即将生效的属性值。
-- `PostAttributeChange`：Max 变化后维护 Current 与 Max 的跨属性关系。
-- `PostGameplayEffectExecute`：Effect 执行后读取已提交值并归整相关属性。
+角色通过 IAbilitySystemInterface 暴露 ASC。战斗 Ability 使用 InstancedPerActor、ServerOnly，当前没有网络预测。
 
-`PostGameplayEffectExecute` 对应 Effect 执行导致的 BaseValue 修改，不覆盖所有持续效果应用。当前属性回归集中在 Instant Effect，持续与叠加效果需另行验证。
+## 属性
 
-Health 的数值约束仍只属于 AttributeSet。`UCombatDeathComponent` 观察最终 Health 值并拥有一次性的存活→死亡转换：先添加注入的 `State.Dead`，再广播同步清理事件。该事件由具体角色消费，因为取消玩家恢复、停止 Boss StateTree、禁用移动和报告 GameMode 都属于游戏组装层，而不是通用属性或 Combat 模块职责。
+Health / MaxHealth、Stamina / MaxStamina 使用相同规则：Max 最低为 0，Current 截断到 `[0, Max]`；降低 Max 会压低 Current，提高 Max 不补满。
 
-玩家耐力恢复使用蓝图配置的 `GE_Player_StaminaRecovery`，无限期且每 0.1 秒增加 2 点 Stamina，并继续经过 AttributeSet 的 `[0, MaxStamina]` 约束。`UAshenOathStaminaRecoveryComponent` 只持有自己的延迟计时器和恢复 Effect；任一 Combat Ability 成功提交非零 Cost 后通知它重启恢复，拒绝动作不会改动当前恢复状态。详见 [战斗动作与伤害](combat-actions.md)。
+PreAttributeChange 限制新值，PostAttributeChange 维护 Max 与 Current 的关系，PostGameplayEffectExecute 归整 Effect 执行后的值；三个回调不是固定流水线。
+
+治疗次数和提交行为见 [战斗动作](combat-actions.md)，Health 归零后的处理见 [对局流程](match-flow.md)。
+
+## 耐力恢复
+
+[StaminaRecovery](../../Source/AshenOath/Private/AbilitySystem/AshenOathStaminaRecoveryComponent.cpp) 持有自己的延迟计时器和周期恢复 Effect，恢复周期与数值由 Effect 资产配置。
+
+- 通用 CostEffect 成功应用后重启延迟，不额外检查实际扣除量；无 CostEffect 的动作不通知。
+- 重击使用独立蓄力费用，确认实际消耗后才通知。
+- 请求被拒绝不影响已有恢复；死亡和退出停止计时器并移除所属 Effect。
+
+## 踩坑/变更
+
+- 取消 Ability 必须早于 ClearActorInfo，否则 Task 清理时可能已经失去动画和 GAS 上下文。
+- UnPossessed 期间不能把 ActorInfo 缓存的 Controller 当作有效占有关系。

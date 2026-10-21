@@ -256,19 +256,6 @@ void AAshenOathBossCharacter::CancelSingleSwing()
 	}
 }
 
-#if WITH_DEV_AUTOMATION_TESTS
-void AAshenOathBossCharacter::GrantSingleSwingForTesting(UAshenOathMeleeActionData* ActionData)
-{
-	if (!IsValid(ActionData) || SingleSwingAbilitySpecHandle.IsValid())
-	{
-		return;
-	}
-
-	SingleSwingAction = ActionData;
-	GrantConfiguredAbilities();
-}
-#endif
-
 bool AAshenOathBossCharacter::GrantConfiguredAbilities()
 {
 	if (!GrantAbilityIfNeeded(

@@ -38,21 +38,6 @@ bool UAshenOathDodgeAbility::TryActivateWithMovementDirection(
 	return bActivationAccepted;
 }
 
-#if WITH_DEV_AUTOMATION_TESTS
-void UAshenOathDodgeAbility::TickTasksForTesting(const float DeltaTime)
-{
-	if (MovementTask)
-	{
-		MovementTask->TickTask(DeltaTime);
-	}
-
-	if (FacingRecoveryTask)
-	{
-		FacingRecoveryTask->TickTask(DeltaTime);
-	}
-}
-#endif
-
 bool UAshenOathDodgeAbility::CanActivateAbility(
 	const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,

@@ -35,12 +35,6 @@ public:
 		EAshenOathDodgeFacingMode FacingMode
 	);
 
-#if WITH_DEV_AUTOMATION_TESTS
-	// Simple automation tests advance a transient UWorld multiple times inside
-	// one engine frame, so its GameplayTasks tick function runs only once.
-	void TickTasksForTesting(float DeltaTime);
-#endif
-
 protected:
 	virtual bool CanActivateAbility(
 		FGameplayAbilitySpecHandle Handle,
