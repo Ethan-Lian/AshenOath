@@ -152,6 +152,7 @@ private:
 	TObjectPtr<UAudioComponent> CombatMusicComponent;
 
 	void ClearIntroPlayback();
+	FTimerHandle IntroFinishedTimer;
 
 	UFUNCTION()
 	void HandleIntroFinished();

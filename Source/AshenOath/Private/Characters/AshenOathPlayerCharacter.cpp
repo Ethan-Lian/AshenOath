@@ -44,6 +44,8 @@ AAshenOathPlayerCharacter::AAshenOathPlayerCharacter()
 	CameraBoom->SetupAttachment(GetRootComponent());
 	CameraBoom->bUsePawnControlRotation = true;
 	CameraBoom->bDoCollisionTest = true;
+	CameraBoom->TargetArmLength = 450.0f;
+	CameraBoom->TargetOffset = FVector(0.0f, 0.0f, 80.0f);
 
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
@@ -74,6 +76,7 @@ AAshenOathPlayerCharacter::AAshenOathPlayerCharacter()
 	CombatFeedbackComponent = CreateDefaultSubobject<UAshenOathCombatFeedbackComponent>(
 		TEXT("CombatFeedbackComponent")
 	);
+	CombatFeedbackComponent->ConfigureDeathAnimationDrivenBone(TEXT("weapon_r"));
 
 	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 
@@ -90,6 +93,7 @@ AAshenOathPlayerCharacter::AAshenOathPlayerCharacter()
 void AAshenOathPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+	FreeCameraTargetOffset = CameraBoom->TargetOffset;
 
 	if (CombatTargetingComponent)
 	{
@@ -495,9 +499,8 @@ bool AAshenOathPlayerCharacter::RequestDodge(const FVector2D& MovementIntent)
 
 	const FVector2D DodgeIntent = MovementIntent.GetSafeNormal();
 
-	// A rear cone preserves target-facing for the backward asset. Every other
-	// direction aligns the forward dodge animation with its displacement.
-	const bool bWantsBackwardDodge = DodgeIntent.Y < -0.5f;
+	// Only locked movement preserves target-facing for the backward asset.
+	const bool bWantsBackwardDodge = IsLockedOn() && DodgeIntent.Y < -0.5f;
 	const FGameplayAbilitySpecHandle DodgeAbilityHandle = bWantsBackwardDodge
 		? BackwardDodgeAbilitySpecHandle
 		: ForwardDodgeAbilitySpecHandle;
@@ -611,6 +614,7 @@ bool AAshenOathPlayerCharacter::IsLockedOn() const
 
 void AAshenOathPlayerCharacter::StopCombatForMatchEnd()
 {
+	CombatFeedbackComponent->StopCombatVocals();
 	RequestClearLockOn();
 	CancelCombatAbilities();
 
@@ -699,22 +703,27 @@ void AAshenOathPlayerCharacter::UpdateLockedView(const float DeltaSeconds)
 		? CombatTargetingComponent->GetTarget()
 		: nullptr;
 	AController* CurrentController = GetController();
+	const bool bHasTarget = IsValid(Target) && CurrentController;
+	const FVector DesiredCameraOffset = FreeCameraTargetOffset +
+		FVector(0.0f, 0.0f, bHasTarget ? LockOnCameraHeight : 0.0f);
+	CameraBoom->TargetOffset = FMath::VInterpTo(
+		CameraBoom->TargetOffset, DesiredCameraOffset, DeltaSeconds, LockOnViewInterpSpeed);
 
-	if (!IsValid(Target) || !CurrentController)
+	if (!bHasTarget)
 	{
 		return;
 	}
 
-	FVector TargetOrigin = Target->GetActorLocation();
-	FVector TargetExtent = FVector::ZeroVector;
-	Target->GetActorBounds(true, TargetOrigin, TargetExtent);
-
-	// Bias above the bounds center so a large Boss remains readable in frame.
-	const FVector FocusPoint = TargetOrigin + FVector(0.0f, 0.0f, TargetExtent.Z * 0.2f);
+	const FVector FocusPoint = Target->GetActorLocation() + FVector(0.0f, 0.0f, LockOnFocusHeight);
 	const FVector ViewOrigin = FollowCamera
 		? FollowCamera->GetComponentLocation()
 		: GetPawnViewLocation();
 	FRotator DesiredViewRotation = (FocusPoint - ViewOrigin).Rotation();
+	// Leave room below the target for the player and ground instead of lowering
+	// the spring-arm camera to keep an elevated target exactly at screen center.
+	DesiredViewRotation.Pitch = FMath::Clamp(
+		DesiredViewRotation.Pitch + LockOnPitchBias,
+		static_cast<float>(LockOnPitchRange.X), static_cast<float>(LockOnPitchRange.Y));
 	DesiredViewRotation.Roll = 0.0f;
 
 	const FRotator SmoothedViewRotation = FMath::RInterpTo(

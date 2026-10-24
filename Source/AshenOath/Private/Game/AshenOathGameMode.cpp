@@ -1,4 +1,5 @@
 #include "Game/AshenOathGameMode.h"
+#include "Feedback/AshenOathCombatFeedbackComponent.h"
 
 #include "LevelSequenceActor.h"
 #include "LevelSequencePlayer.h"
@@ -168,10 +169,12 @@ void AAshenOathGameMode::ReportDeathPresentationFinished(AActor* DeadActor)
 	}
 
 	bDeathPresentationReported = true;
-	if (DeathPresentationHoldSeconds > 0.0f)
+	const UAshenOathCombatFeedbackComponent* Feedback = DeadActor->FindComponentByClass<UAshenOathCombatFeedbackComponent>();
+	const float HoldSeconds = FMath::Max(DeathPresentationHoldSeconds, Feedback ? Feedback->GetDeathFinishDuration() : 0.0f);
+	if (HoldSeconds > 0.0f)
 	{
 		GetWorldTimerManager().SetTimer(MatchPresentationTimer, this,
-			&AAshenOathGameMode::ShowMatchPresentation, DeathPresentationHoldSeconds, false);
+			&AAshenOathGameMode::ShowMatchPresentation, HoldSeconds, false);
 	}
 	else
 	{
@@ -392,6 +395,7 @@ void AAshenOathGameMode::ClearCombatMusic()
 
 void AAshenOathGameMode::ClearIntroPlayback()
 {
+	GetWorldTimerManager().ClearTimer(IntroFinishedTimer);
 	ULevelSequencePlayer* PlayerToStop = IntroPlayer;
 	ALevelSequenceActor* ActorToDestroy = IntroActor;
 	IntroPlayer = nullptr;
@@ -423,5 +427,12 @@ void AAshenOathGameMode::ClearIntroPlayback()
 
 void AAshenOathGameMode::HandleIntroFinished()
 {
-	BeginCombat();
+	if (!IntroPlayer || IntroFinishedTimer.IsValid())
+	{
+		return;
+	}
+
+	// OnStop runs inside Sequencer's final update. Destroying its actor here tears down
+	// the TickManager before that update can finish running latent actions (UE 5.8).
+	IntroFinishedTimer = GetWorldTimerManager().SetTimerForNextTick(this, &AAshenOathGameMode::BeginCombat);
 }

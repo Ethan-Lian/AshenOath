@@ -42,14 +42,15 @@ public:
 		return DeathStartedEvent;
 	}
 
-	// Fires once after the owned Montage ends (including interruption), or
-	// immediately after DeathStarted if no Montage can be played.
+	// Fires once when the owned Montage reaches its held final pose or is
+	// interrupted; fires after DeathStarted immediately if playback fails.
 	FDeathPresentationFinishedEvent& OnDeathPresentationFinished()
 	{
 		return DeathPresentationFinishedEvent;
 	}
 
 protected:
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:

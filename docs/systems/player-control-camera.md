@@ -9,7 +9,7 @@ Controller 每次取当前 Pawn，检查本地控制和 Gameplay 输入开关后
 | 输入 | 转发 |
 |---|---|
 | Move | 二维意图与 ControlRotation.Yaw；Completed / Canceled 清零最近意图 |
-| Look | 更新 ControlRotation；锁定时拒绝手动 Look |
+| Look | 自由时更新 ControlRotation；锁定时忽略手动 Look，由系统自动构图 |
 | Combo / Heavy | Started 转发按下，Completed / Canceled 转发松开 |
 | Dodge | 携带最近移动意图 |
 | Heal / LockOn | 请求治疗 / 切换锁定 |
@@ -26,7 +26,7 @@ RequestMove 的 X = 右、Y = 前。自由移动使用参考 Yaw，锁定移动�
 
 自由时启用 OrientRotationToMovement；锁定且动作未接管时启用 UseControllerDesiredRotation。死亡、硬直或移动锁期间关闭两者，动作自己的转向见 [战斗动作](combat-actions.md)。
 
-闪避按输入后向锥选择前/后配置，无输入沿角色前方；通常按控制视角换算世界方向。锁定纯侧闪改用目标连线的切线，并按 LockedSideDodgeInwardAngle 向内偏转，目标水平重合时沿原方向。
+自由状态下有方向输入的闪避统一朝输入方向转身前滚；只有锁定时，输入后向锥才选择后翻并保留身体朝向。无输入沿角色前方；通常按控制视角换算世界方向。锁定纯侧闪改用目标连线的切线，并按 LockedSideDodgeInwardAngle 向内偏转，目标水平重合时沿原方向。
 
 ## 锁定与镜头
 
@@ -34,7 +34,9 @@ RequestMove 的 X = 右、Y = 前。自由移动使用参考 Yaw，锁定移动�
 
 Targeting 用弱引用持有目标，检查同一 World、非自身、距离和注入的终止 Tag；Tick 复核，目标销毁/死亡/超距时清除。失去占有、关闭输入、对局结束和退出也解除锁定。
 
-锁定焦点取 Boss Bounds 中心加 0.2 × Extent.Z，从当前镜头位置算视角，经 RInterpTo 写入 ControlRotation。动作接管身体时镜头仍可追踪。
+锁定焦点取目标 Actor 原点加 LockOnFocusHeight，避免动画 Bounds 改变焦点。从当前镜头位置计算 Yaw / Pitch，Pitch 叠加 LockOnPitchBias，限制在 LockOnPitchRange 内，再经 RInterpTo 写入 ControlRotation。锁定期间不接受鼠标上下微调；机位高度、焦点高度、俯仰偏置和范围仍可在角色蓝图中配置。动作接管身体时镜头仍可追踪。
+
+BeginPlay 缓存自由镜头的 SpringArm.TargetOffset；锁定时额外增加 LockOnCameraHeight，解锁、目标死亡或丢失时平滑恢复。默认锁定 Pitch 范围为 −35° 到 0°，避免仰视把后方机位压低。玩家蓝图 Camera 的相对位置和旋转为零，机位偏移由 SpringArm 管理，使锁定计算与最终视线、碰撞检测一致。
 
 SpringArm 使用 PawnControlRotation 并处理碰撞，Camera 挂接其 Socket，不再单独使用 PawnControlRotation。Character 不直接跟随 Controller 的 Pitch / Yaw / Roll。
 

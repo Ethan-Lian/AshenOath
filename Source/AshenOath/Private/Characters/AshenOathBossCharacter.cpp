@@ -330,6 +330,7 @@ void AAshenOathBossCharacter::HandleAbilityEnded(const FAbilityEndedData& EndedD
 
 void AAshenOathBossCharacter::StopCombatForMatchEnd()
 {
+	CombatFeedbackComponent->StopCombatVocals();
 	DecisionComponent->ClearPendingCombatDecision();
 	if (StateTreeComponent)
 	{

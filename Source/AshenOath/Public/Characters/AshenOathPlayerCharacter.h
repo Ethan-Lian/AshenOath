@@ -206,6 +206,22 @@ private:
 		meta = (ClampMin = "0.0"))
 	float LockOnViewInterpSpeed = 8.0f;
 
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Lock On", meta = (Units = "cm"))
+	float LockOnCameraHeight = 40.0f;
+
+	// Stable torso offset from the target actor origin, independent of animated bounds.
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Lock On", meta = (Units = "cm"))
+	float LockOnFocusHeight = 40.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Lock On", meta = (Units = "deg"))
+	float LockOnPitchBias = -10.0f;
+
+	// X is the lowest pitch, Y the highest. Zero is horizontal; negative looks down.
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Lock On", meta = (Units = "deg"))
+	FVector2D LockOnPitchRange = FVector2D(-35.0f, 0.0f);
+
+	FVector FreeCameraTargetOffset = FVector::ZeroVector;
+
 	// PossessedBy may run again after repossession; initial stats are applied only once.
 	bool bInitialAttributesApplied = false;
 	FDelegateHandle DeathStartedHandle;

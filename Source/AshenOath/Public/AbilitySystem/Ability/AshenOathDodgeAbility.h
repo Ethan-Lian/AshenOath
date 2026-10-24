@@ -11,6 +11,10 @@ class UAshenOathAbilityTask_RecoverFacing;
 class UAshenOathDodgeActionData;
 class UAnimMontage;
 class UCombatDefenseComponent;
+class UAshenOathCombatFeedbackComponent;
+class USkeletalMeshComponent;
+class UAnimSequenceBase;
+class USoundBase;
 
 enum class EAshenOathDodgeFacingMode : uint8
 {
@@ -28,6 +32,8 @@ class ASHENOATH_API UAshenOathDodgeAbility : public UAshenOathCombatAbility
 
 public:
 	UAshenOathDodgeAbility();
+	void RequestVocalFromAnimation(
+		USkeletalMeshComponent* MeshComponent, UAnimSequenceBase* Animation, int32 MontageInstanceId, USoundBase* Sound);
 
 	/** Returns true when GAS accepts activation with this frozen direction and facing policy. */
 	bool TryActivateWithMovementDirection(
@@ -126,6 +132,10 @@ private:
 	TObjectPtr<UAshenOathAbilityTask_RecoverFacing> FacingRecoveryTask;
 
 	TWeakObjectPtr<UCombatDefenseComponent> ActiveDefenseComponent;
+	TWeakObjectPtr<UAshenOathCombatFeedbackComponent> ActiveFeedbackComponent;
+	TWeakObjectPtr<UAnimMontage> ActiveVocalMontage;
+	int32 ActiveVocalMontageInstanceId = INDEX_NONE;
+	uint32 ActiveVocalActionId = 0;
 
 	FCombatDefenseWindowHandle ActiveDefenseWindow;
 

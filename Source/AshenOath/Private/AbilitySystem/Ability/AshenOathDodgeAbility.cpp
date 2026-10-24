@@ -5,6 +5,9 @@
 #include "AbilitySystemComponent.h"
 #include "AbilitySystem/Data/AshenOathDodgeActionData.h"
 #include "Animation/AnimMontage.h"
+#include "Animation/AnimInstance.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Feedback/AshenOathCombatFeedbackComponent.h"
 #include "Defense/CombatDefenseComponent.h"
 #include "GameplayTags/AshenOathGameplayTags.h"
 #include "Tasks/AbilityTask_ApplyCombatMovement.h"
@@ -155,7 +158,45 @@ bool UAshenOathDodgeAbility::StartDodgeMontage(
 	);
 	NewMontageTask->ReadyForActivation();
 
-	return IsActive() && IsDodgeMontageOwned(ActorInfo, ActionData->Montage);
+	if (!IsActive() || !IsDodgeMontageOwned(ActorInfo, ActionData->Montage))
+	{
+		return false;
+	}
+
+	const FAnimMontageInstance* Instance = ActorInfo->GetAnimInstance()->GetActiveInstanceForMontage(ActionData->Montage);
+	if (!Instance)
+	{
+		return false;
+	}
+	ActiveVocalMontage = ActionData->Montage;
+	ActiveVocalMontageInstanceId = Instance->GetInstanceID();
+	if (UAshenOathCombatFeedbackComponent* Feedback =
+		GetAvatarActorFromActorInfo()->FindComponentByClass<UAshenOathCombatFeedbackComponent>())
+	{
+		ActiveFeedbackComponent = Feedback;
+		ActiveVocalActionId = Feedback->BeginVocalAction();
+	}
+	return true;
+}
+
+void UAshenOathDodgeAbility::RequestVocalFromAnimation(
+	USkeletalMeshComponent* MeshComponent, UAnimSequenceBase* Animation, const int32 MontageInstanceId, USoundBase* Sound)
+{
+	const FGameplayAbilityActorInfo* ActorInfo = GetCurrentActorInfo();
+	const UAnimInstance* AnimInstance = ActorInfo ? ActorInfo->GetAnimInstance() : nullptr;
+	const FAnimMontageInstance* Instance = AnimInstance
+		? AnimInstance->GetActiveInstanceForMontage(ActiveVocalMontage.Get()) : nullptr;
+	if (!IsActive() || !ActorInfo || MeshComponent != ActorInfo->SkeletalMeshComponent.Get() ||
+		!MeshComponent || MeshComponent->GetAnimInstance() != AnimInstance ||
+		!Animation || Animation != ActiveVocalMontage.Get() || MontageInstanceId == INDEX_NONE ||
+		MontageInstanceId != ActiveVocalMontageInstanceId || !Instance || Instance->GetInstanceID() != MontageInstanceId)
+	{
+		return;
+	}
+	if (UAshenOathCombatFeedbackComponent* Feedback = ActiveFeedbackComponent.Get())
+	{
+		Feedback->RequestActionVocal(ActiveVocalActionId, EAshenOathVocalType::Dodge, Sound);
+	}
 }
 
 bool UAshenOathDodgeAbility::IsDodgeMontageOwned(
@@ -289,6 +330,12 @@ void UAshenOathDodgeAbility::EndAbility(
 {
 	UCombatDefenseComponent* Defense = ActiveDefenseComponent.Get();
 	const FCombatDefenseWindowHandle WindowToEnd = ActiveDefenseWindow;
+	UAshenOathCombatFeedbackComponent* Feedback = ActiveFeedbackComponent.Get();
+	const uint32 VocalActionToEnd = ActiveVocalActionId;
+	ActiveFeedbackComponent.Reset();
+	ActiveVocalActionId = 0;
+	ActiveVocalMontage.Reset();
+	ActiveVocalMontageInstanceId = INDEX_NONE;
 
 	// Revoke the reusable ability instance's ownership before touching external
 	// state. Removing tags and stopping tasks may synchronously re-enter here.
@@ -302,6 +349,10 @@ void UAshenOathDodgeAbility::EndAbility(
 	ActiveFacingMode = EAshenOathDodgeFacingMode::PreserveCurrentFacing;
 	PendingFacingMode = EAshenOathDodgeFacingMode::PreserveCurrentFacing;
 	ResetCostApplicationResult();
+	if (Feedback)
+	{
+		Feedback->EndVocalAction(VocalActionToEnd, bWasCancelled);
+	}
 
 	if (Defense)
 	{

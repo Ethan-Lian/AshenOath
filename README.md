@@ -47,22 +47,9 @@
 
 依赖方向保持单向：`AshenOath` 负责组装 `AshenOathCombat`；通用战斗模块不引用具体玩家、Boss 或 UI 类型。
 
-## 环境与运行
-
-- Unreal Engine 5.8，本地版本为 5.8.2；Win64。
-- 单人、单 Boss、封闭竞技场；Boss 战斗当前只覆盖第一阶段。
-- 当前不包含多人、开放世界、装备、掉落、普通小怪或投射物系统。
-
-此 Git 仓库保存 C++、配置和文档，`.uasset`、`.umap` 及构建产物按 `.gitignore` 排除。**仅克隆源码不能获得完整可运行工程**；打开关卡需要单独提供完整的本地 Content 资源，包括角色 Blueprint、ActionData、GameplayEffect、Montage、StateTree、UI 和地图。
-
-具备完整资源后：
-
-1. 用 UE 5.8 生成项目文件，构建 `AshenOathEditor` 的 Development Editor / Win64 目标。
-2. 打开 `AshenOath.uproject`，加载默认地图 `/Game/AshenOath/Maps/GameLevel`，使用配置的 `BP_AshenOathGameMode`。
-3. 在 PIE 中进入 Boss 入口 Trigger，完成演出、战斗和结算流程。具体键位以 PlayerController 的 `GameplayMappingContext` 资产为准。
-
 ## 文档
 
+- [UE5 / C++ 面试准备：12 天计划与项目深挖](docs/reference/interview-preparation.md)
 - [架构总览](docs/arch/architecture.md)
 - [战斗动作与伤害](docs/systems/combat-actions.md)
 - [GAS 与属性系统](docs/systems/ability-system.md)

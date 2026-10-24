@@ -8,7 +8,9 @@
 
 UCombatDeathComponent::UCombatDeathComponent()
 {
-	PrimaryComponentTick.bCanEverTick = false;
+	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.bStartWithTickEnabled = false;
+	PrimaryComponentTick.TickGroup = TG_PostPhysics;
 }
 
 void UCombatDeathComponent::ConfigureDeathContract(
@@ -65,11 +67,31 @@ bool UCombatDeathComponent::IsDeathStarted() const
 	return bDeathStarted;
 }
 
+void UCombatDeathComponent::TickComponent(
+	const float DeltaTime,
+	const ELevelTick TickType,
+	FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	UAnimInstance* AnimInstance = DeathAnimInstance.Get();
+	const FAnimMontageInstance* MontageInstance = AnimInstance
+		? AnimInstance->GetMontageInstanceForID(DeathMontageInstanceID)
+		: nullptr;
+	if (!MontageInstance || (!MontageInstance->IsPlaying() && !MontageInstance->IsStopped()))
+	{
+		// With auto blend-out disabled the engine stops playback at the last
+		// section's end but keeps the instance weighted, preserving the corpse pose.
+		FinishDeathPresentation();
+	}
+}
+
 void UCombatDeathComponent::EndPlay(
 	const EEndPlayReason::Type EndPlayReason)
 {
 	// Queued animation callbacks must not report presentation during teardown.
 	bDeathPresentationFinished = true;
+	SetComponentTickEnabled(false);
 	UnbindDeathMontage();
 	UAbilitySystemComponent* AbilitySystem = AbilitySystemComponent.Get();
 	const bool bRemoveOwnedTerminalTag = bOwnsTerminalStateTag;
@@ -180,7 +202,9 @@ void UCombatDeathComponent::PlayDeathMontage()
 
 	DeathAnimInstance = AnimInstance;
 	DeathMontageInstanceID = MontageInstance->GetInstanceID();
+	MontageInstance->bEnableAutoBlendOut = false;
 	MontageInstance->OnMontageEnded.BindUObject(this, &UCombatDeathComponent::HandleDeathMontageEnded);
+	SetComponentTickEnabled(true);
 }
 
 void UCombatDeathComponent::HandleDeathMontageEnded(UAnimMontage* Montage, bool /*bInterrupted*/)
@@ -201,6 +225,7 @@ void UCombatDeathComponent::FinishDeathPresentation()
 	}
 
 	bDeathPresentationFinished = true;
+	SetComponentTickEnabled(false);
 	DeathPresentationFinishedEvent.Broadcast();
 }
 

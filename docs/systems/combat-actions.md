@@ -38,7 +38,7 @@ Montage 确认、Cost 成功后，以同一个世界时间启动 Defense 窗口�
 
 Travel 沿激活时冻结的世界方向执行 Sweep，忽略动画根位移；Walking/NavWalking 下贴坡、StepUp 和贴地，墙体或过高台阶截断位移，受阻距离不补偿。结束/中断恢复 MovementMode 与 RootMotionMode。
 
-前/侧翻朝向位移方向，Travel 结束后用独立 Recovery Task 平滑转回锁定目标的实时方位；后翻保持原朝向，不创建 Recovery。Montage 提前结束会清理恢复，不延长动作锁。
+前/侧翻朝向位移方向，Travel 结束后用独立 Recovery Task 平滑转回锁定目标的实时方位；仅锁定时选择后翻，后翻保持原朝向，不创建 Recovery。自由状态所有方向输入均选择前滚。Montage 提前结束会清理恢复，不延长动作锁。
 
 ## 伤害与受击
 
