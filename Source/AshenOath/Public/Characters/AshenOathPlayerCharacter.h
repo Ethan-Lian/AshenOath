@@ -4,6 +4,7 @@
 #include "AbilitySystemInterface.h"
 #include "GameFramework/Character.h"
 #include "GameplayAbilitySpecHandle.h"
+#include "Feedback/AshenOathChargeState.h"
 #include "AshenOathPlayerCharacter.generated.h"
 
 class UAshenOathAttributeSet;
@@ -32,6 +33,7 @@ class UAshenOathCombatFeedbackComponent;
 class UCombatTargetingComponent;
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnAshenOathHealUsesChanged, int32);
+DECLARE_MULTICAST_DELEGATE(FOnAshenOathHeavyChargeChanged);
 
 /**
  * Player-side GAS host, movement and combat actions.
@@ -62,6 +64,8 @@ public:
 	// Ability without exposing its internal phase to the Controller.
 	bool RequestHeavyAttackPressed();
 	bool RequestHeavyAttackReleased();
+	FAshenOathChargeState GetHeavyChargeState() const;
+	FOnAshenOathHeavyChargeChanged& OnHeavyChargeChanged() { return HeavyChargeChangedEvent; }
 
 	// Requests one interruptible Cast. The accepted request does not spend a use.
 	bool RequestHeal();
@@ -99,6 +103,7 @@ protected:
 
 private:
 	friend class UAshenOathHealAbility;
+	friend class UAshenOathHeavyAttackAbility;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AshenOath|AbilitySystem",
 		meta = (AllowPrivateAccess = "true"))
@@ -157,6 +162,7 @@ private:
 	TSubclassOf<UAshenOathHeavyAttackAbility> HeavyAttackAbilityClass;
 
 	FGameplayAbilitySpecHandle HeavyAttackAbilitySpecHandle;
+	FOnAshenOathHeavyChargeChanged HeavyChargeChangedEvent;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Heal")
 	TObjectPtr<UAshenOathHealActionData> HealAction;

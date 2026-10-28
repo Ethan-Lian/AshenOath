@@ -38,6 +38,12 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> HealUsesText;
 
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UProgressBar> ChargeBar;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> ChargeText;
+
 private:
 	void HandleAttributeChanged(const FOnAttributeChangeData& ChangeData);
 
@@ -46,6 +52,7 @@ private:
 
 	void RefreshStamina();
 	void RefreshHealUses();
+	void RefreshCharge();
 	void HandleHealUsesChanged(int32 NewRemainingUses);
 
 	void UnbindAttributes();
@@ -63,4 +70,5 @@ private:
 
 	FDelegateHandle MaxStaminaChangedHandle;
 	FDelegateHandle HealUsesChangedHandle;
+	FDelegateHandle HeavyChargeChangedHandle;
 };

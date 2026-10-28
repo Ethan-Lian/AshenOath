@@ -1,5 +1,6 @@
 #include "AbilitySystem/Ability/AshenOathComboAttackAbility.h"
 #include "AbilitySystem/Data/AshenOathComboAttackData.h"
+#include "AbilitySystem/Tasks/AshenOathAbilityTask_ComboTargetAssist.h"
 
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -248,13 +249,21 @@ bool UAshenOathComboAttackAbility::StartComboExecution(
 		AnimInstance->Montage_SetNextSection(SectionName, NAME_None, Montage);
 	}
 
-	return BeginMeleeExecution(
+	if (!BeginMeleeExecution(
 		Handle,
 		ActorInfo,
 		ActivationInfo,
 		ActionData,
 		EMeleeCostCommit::CommitConfigured
-	);
+	))
+	{
+		return false;
+	}
+
+	UAshenOathAbilityTask_ComboTargetAssist* TargetAssist =
+		UAshenOathAbilityTask_ComboTargetAssist::AssistComboTarget(this, ActionData, GetActiveAttackMontageInstanceId());
+	TargetAssist->ReadyForActivation();
+	return IsActive();
 }
 
 void UAshenOathComboAttackAbility::ResetComboState()

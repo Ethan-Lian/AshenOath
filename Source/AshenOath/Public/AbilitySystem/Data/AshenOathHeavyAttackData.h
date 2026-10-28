@@ -4,6 +4,9 @@
 #include "AbilitySystem/Data/AshenOathMeleeActionData.h"
 #include "AshenOathHeavyAttackData.generated.h"
 
+class UParticleSystem;
+class USoundBase;
+
 /** Player heavy attack configuration; runtime press/hold state stays in the Ability. */
 UCLASS(BlueprintType)
 class ASHENOATH_API UAshenOathHeavyAttackData : public UAshenOathMeleeActionData
@@ -58,4 +61,32 @@ public:
 	// Must contain the melee hit-window notifies used by the release attack.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Heavy Attack|Charge")
 	FName ChargedReleaseSection = NAME_None;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Heavy Attack|Feedback")
+	FName ChargeFeedbackSocket = TEXT("FX_Staff_Mid");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Heavy Attack|Feedback")
+	TObjectPtr<USoundBase> ChargeStartSound;
+
+	// Looping is authored on the sound asset; the Ability owns its lifetime.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Heavy Attack|Feedback")
+	TObjectPtr<USoundBase> ChargeLoopSound;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Heavy Attack|Feedback")
+	TObjectPtr<USoundBase> ChargeReadySound;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Heavy Attack|Feedback")
+	TObjectPtr<USoundBase> ChargeReleaseSound;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Heavy Attack|Feedback")
+	TObjectPtr<UParticleSystem> ChargeLoopEffect;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Heavy Attack|Feedback")
+	TObjectPtr<UParticleSystem> ChargeReadyEffect;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Heavy Attack|Feedback")
+	TObjectPtr<UParticleSystem> ChargeReleaseEffect;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Heavy Attack|Feedback", meta = (ClampMin = "0.01"))
+	float ChargeEffectScale = 1.0f;
 };

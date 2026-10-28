@@ -400,6 +400,14 @@ bool AAshenOathPlayerCharacter::RequestHeavyAttackPressed()
 	);
 }
 
+FAshenOathChargeState AAshenOathPlayerCharacter::GetHeavyChargeState() const
+{
+	const FGameplayAbilitySpec* Spec = AbilitySystemComponent->FindAbilitySpecFromHandle(HeavyAttackAbilitySpecHandle);
+	const UAshenOathHeavyAttackAbility* Ability = Spec && Spec->IsActive()
+		? Cast<UAshenOathHeavyAttackAbility>(Spec->GetPrimaryInstance()) : nullptr;
+	return Ability ? Ability->GetChargeState() : FAshenOathChargeState();
+}
+
 bool AAshenOathPlayerCharacter::RequestHeavyAttackReleased()
 {
 	if (!AbilitySystemComponent || IsActorBeingDestroyed())

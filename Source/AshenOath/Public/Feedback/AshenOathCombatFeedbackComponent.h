@@ -15,6 +15,9 @@ class USkeletalMeshComponent;
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
 class UParticleSystemComponent;
+class UAshenOathHeavyAttackData;
+class UPointLightComponent;
+struct FAshenOathChargeState;
 struct FCombatDamageAttempt;
 struct FHitResult;
 enum class ECombatDamageResult : uint8;
@@ -35,6 +38,11 @@ public:
 	void StopCombatVocals();
 	float GetDeathFinishDuration() const;
 	void ConfigureDeathAnimationDrivenBone(FName BoneName);
+
+	uint32 BeginChargeFeedback(const UAshenOathHeavyAttackData* Data);
+	void UpdateChargeFeedback(uint32 ChargeId, const FAshenOathChargeState& State);
+	void ReleaseChargeFeedback(uint32 ChargeId, float ChargeAlpha);
+	void EndChargeFeedback(uint32 ChargeId, bool bWasCancelled);
 
 protected:
 	virtual void BeginPlay() override;
@@ -64,6 +72,18 @@ private:
 	void UpdateDeathMaterials(float Progress);
 	void UpdateDeathCamera(float DeltaTime);
 	void StopDeathEffects();
+	void StopChargeLoop();
+	void PlayChargeCue(USoundBase* Sound, UParticleSystem* Effect, float Scale);
+
+	TWeakObjectPtr<const UAshenOathHeavyAttackData> ActiveChargeData;
+	TWeakObjectPtr<UAudioComponent> ChargeLoopAudio;
+	TWeakObjectPtr<UParticleSystemComponent> ChargeLoopParticle;
+	TWeakObjectPtr<UPointLightComponent> ChargeLight;
+	TArray<TWeakObjectPtr<UAudioComponent>> ChargeCueAudio;
+	TArray<TWeakObjectPtr<UParticleSystemComponent>> ChargeCueParticles;
+	uint32 NextChargeId = 0;
+	uint32 ActiveChargeId = 0;
+	bool bChargeReadyPlayed = false;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Feedback|Death")
 	TObjectPtr<UParticleSystem> DeathGroundEffect;

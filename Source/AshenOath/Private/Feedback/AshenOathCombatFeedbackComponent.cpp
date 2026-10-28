@@ -3,6 +3,9 @@
 #include "Components/AudioComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/PointLightComponent.h"
+#include "AbilitySystem/Data/AshenOathHeavyAttackData.h"
+#include "Feedback/AshenOathChargeState.h"
 #include "Camera/PlayerCameraManager.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -56,6 +59,7 @@ void UAshenOathCombatFeedbackComponent::BeginPlay()
 
 void UAshenOathCombatFeedbackComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	EndChargeFeedback(ActiveChargeId, true);
 	DeathRagdollMesh.Reset();
 	bCombatEnded = true;
 	ActiveVocalActionId = 0;
@@ -87,6 +91,168 @@ void UAshenOathCombatFeedbackComponent::EndPlay(const EEndPlayReason::Type EndPl
 	BoundDeathComponent.Reset();
 
 	Super::EndPlay(EndPlayReason);
+}
+
+uint32 UAshenOathCombatFeedbackComponent::BeginChargeFeedback(const UAshenOathHeavyAttackData* Data)
+{
+	if (!Data || bCombatEnded || bDeathVocalRequested)
+	{
+		return 0;
+	}
+	EndChargeFeedback(ActiveChargeId, true);
+	USkeletalMeshComponent* Mesh = GetOwner()->FindComponentByClass<USkeletalMeshComponent>();
+	if (!Mesh)
+	{
+		return 0;
+	}
+	do
+	{
+		++NextChargeId;
+	}
+	while (NextChargeId == 0);
+	ActiveChargeId = NextChargeId;
+	ActiveChargeData = Data;
+	bChargeReadyPlayed = false;
+	if (Data->ChargeLoopSound)
+	{
+		ChargeLoopAudio = UGameplayStatics::SpawnSoundAttached(Data->ChargeLoopSound, Mesh,
+			Data->ChargeFeedbackSocket, FVector::ZeroVector, EAttachLocation::KeepRelativeOffset, true, 0.3f, 0.85f);
+	}
+	if (Data->ChargeLoopEffect)
+	{
+		ChargeLoopParticle = UGameplayStatics::SpawnEmitterAttached(Data->ChargeLoopEffect, Mesh,
+			Data->ChargeFeedbackSocket, FVector::ZeroVector, FRotator::ZeroRotator,
+			FVector(Data->ChargeEffectScale * 0.4f));
+	}
+	UPointLightComponent* Light = NewObject<UPointLightComponent>(GetOwner());
+	ChargeLight = Light;
+	Light->SetupAttachment(Mesh, Data->ChargeFeedbackSocket);
+	Light->SetLightColor(FLinearColor(1.0f, 0.16f, 0.015f));
+	Light->SetIntensity(60.0f);
+	Light->SetAttenuationRadius(140.0f);
+	Light->SetCastShadows(false);
+	Light->RegisterComponent();
+	PlayChargeCue(Data->ChargeStartSound, nullptr, 1.0f);
+	return ActiveChargeId;
+}
+
+void UAshenOathCombatFeedbackComponent::UpdateChargeFeedback(const uint32 ChargeId, const FAshenOathChargeState& State)
+{
+	if (ChargeId == 0 || ChargeId != ActiveChargeId)
+	{
+		return;
+	}
+	if (!State.bCharging)
+	{
+		StopChargeLoop();
+		return;
+	}
+	const UAshenOathHeavyAttackData* Data = ActiveChargeData.Get();
+	if (!Data)
+	{
+		return;
+	}
+	if (UAudioComponent* Audio = ChargeLoopAudio.Get())
+	{
+		Audio->SetVolumeMultiplier(FMath::Lerp(0.3f, 0.85f, State.ChargeAlpha));
+		Audio->SetPitchMultiplier(FMath::Lerp(0.85f, 1.2f, State.ChargeAlpha));
+	}
+	if (UParticleSystemComponent* Particle = ChargeLoopParticle.Get())
+	{
+		Particle->SetRelativeScale3D(FVector(Data->ChargeEffectScale * FMath::Lerp(0.4f, 1.0f, State.ChargeAlpha)));
+	}
+	if (UPointLightComponent* Light = ChargeLight.Get())
+	{
+		Light->SetIntensity(FMath::Lerp(60.0f, 500.0f, State.ChargeAlpha));
+	}
+	if (State.bCanRelease && !bChargeReadyPlayed)
+	{
+		bChargeReadyPlayed = true;
+		PlayChargeCue(Data->ChargeReadySound, Data->ChargeReadyEffect, Data->ChargeEffectScale * 0.6f);
+	}
+}
+
+void UAshenOathCombatFeedbackComponent::ReleaseChargeFeedback(const uint32 ChargeId, const float ChargeAlpha)
+{
+	if (ChargeId == 0 || ChargeId != ActiveChargeId)
+	{
+		return;
+	}
+	StopChargeLoop();
+	if (const UAshenOathHeavyAttackData* Data = ActiveChargeData.Get())
+	{
+		PlayChargeCue(Data->ChargeReleaseSound, Data->ChargeReleaseEffect,
+			Data->ChargeEffectScale * FMath::Lerp(0.5f, 1.0f, ChargeAlpha));
+	}
+}
+
+void UAshenOathCombatFeedbackComponent::EndChargeFeedback(const uint32 ChargeId, const bool bWasCancelled)
+{
+	if (ChargeId == 0 || ChargeId != ActiveChargeId)
+	{
+		return;
+	}
+	ActiveChargeId = 0;
+	ActiveChargeData.Reset();
+	StopChargeLoop();
+	if (bWasCancelled)
+	{
+		for (const TWeakObjectPtr<UAudioComponent>& Audio : ChargeCueAudio)
+		{
+			if (Audio.IsValid())
+			{
+				Audio->FadeOut(0.05f, 0.0f);
+			}
+		}
+		for (const TWeakObjectPtr<UParticleSystemComponent>& Particle : ChargeCueParticles)
+		{
+			if (Particle.IsValid())
+			{
+				Particle->DestroyComponent();
+			}
+		}
+	}
+	ChargeCueAudio.Reset();
+	ChargeCueParticles.Reset();
+}
+
+void UAshenOathCombatFeedbackComponent::StopChargeLoop()
+{
+	if (UAudioComponent* Audio = ChargeLoopAudio.Get())
+	{
+		Audio->FadeOut(0.05f, 0.0f);
+	}
+	ChargeLoopAudio.Reset();
+	if (UParticleSystemComponent* Particle = ChargeLoopParticle.Get())
+	{
+		Particle->DestroyComponent();
+	}
+	ChargeLoopParticle.Reset();
+	if (UPointLightComponent* Light = ChargeLight.Get())
+	{
+		Light->DestroyComponent();
+	}
+	ChargeLight.Reset();
+}
+
+void UAshenOathCombatFeedbackComponent::PlayChargeCue(USoundBase* Sound, UParticleSystem* Effect, const float Scale)
+{
+	const UAshenOathHeavyAttackData* Data = ActiveChargeData.Get();
+	USkeletalMeshComponent* Mesh = GetOwner()->FindComponentByClass<USkeletalMeshComponent>();
+	if (!Data || !Mesh)
+	{
+		return;
+	}
+	if (Sound)
+	{
+		ChargeCueAudio.Add(UGameplayStatics::SpawnSoundAttached(Sound, Mesh, Data->ChargeFeedbackSocket,
+			FVector::ZeroVector, EAttachLocation::KeepRelativeOffset, true, 0.65f));
+	}
+	if (Effect)
+	{
+		ChargeCueParticles.Add(UGameplayStatics::SpawnEmitterAttached(Effect, Mesh, Data->ChargeFeedbackSocket,
+			FVector::ZeroVector, FRotator::ZeroRotator, FVector(Scale)));
+	}
 }
 
 uint32 UAshenOathCombatFeedbackComponent::BeginVocalAction()
