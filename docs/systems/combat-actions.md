@@ -55,9 +55,3 @@ Damage 先拒绝已终止的来源/目标，再检查无敌：ASC 存在 Defense
 只广播 Applied 和两类无敌结果，Invalid 不广播。HitReaction 只响应有受击资格的 Applied：建立短硬直 → 取消可中断动作 → 停止移动并播放受击 Montage；结束只清理自身状态。
 
 死亡、反馈和结算见 [对局流程](match-flow.md)，Boss 请求交接见 [Boss AI](boss-ai.md)，耐力恢复见 [GAS](ability-system.md)。
-
-## 踩坑/变更
-
-- SpecHandle 标识授予记录，不能隔离旧动画回调；旧 Montage 的 Notify 要靠播放实例 ID 拒绝。
-- Combo Window 必须落在所属 Section 内，相邻窗口留间隔；跨段或重叠会漏掉下一次开窗。
-- 闪避 Montage 的尾段要覆盖 FacingRecoveryDuration；StartSection、播放速率或位移时长变化后需一起核对。

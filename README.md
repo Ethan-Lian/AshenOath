@@ -1,61 +1,48 @@
 # AshenOath
 
-`AshenOath` 是使用 Unreal Engine 5.8 开发的单人第三人称 Boss 战项目。玩家在封闭竞技场中通过轻击连招、蓄力重击、闪避和治疗与 Boss 战斗。项目重点是 GAS 动作生命周期、可复用的战斗组件，以及 StateTree 与 Utility Scoring 驱动的 Boss AI。
+AshenOath 是使用 Unreal Engine 5.8 开发的单人第三人称 Boss 战项目。玩家在竞技场中运用连招、蓄力重击、闪避和治疗与 Boss 战斗。项目重点包括 GAS 战斗动作、可复用战斗组件，以及 StateTree 和 Utility Scoring 驱动的 Boss AI。
 
-## 当前实现
+## 架构总览
 
-### 玩家动作
+![AshenOath 总体架构图](docs/arch/diagrams/architecture-overview.svg)
 
-- Enhanced Input 路由移动、镜头、轻击、重击、闪避、治疗和锁定请求；自由移动使用视角坐标，锁定移动使用角色朝向坐标。
-- 轻击连招支持点按与长按混合，通过所属 Combo Window 消费输入并推进 Montage Section，整套连招提交一次动作费用。
-- 蓄力重击按实际蓄力消耗的耐力计算伤害倍率；至少蓄力 1 秒才可释放，松键、满蓄或耐力耗尽进入统一释放入口，蓄力中可通过闪避取消。释放时按距离、角度和视线条件修正朝向。
-- 前后闪避冻结输入方向，通过代码位移与碰撞 Sweep 处理地形、台阶和阻挡；无敌按世界时间窗口判定。锁定时前/侧翻在位移结束后平滑回正，后翻保持朝向。
-- 原地治疗初始可用三次；所属 Montage 的治疗 Notify 成功应用 Instant GameplayEffect 后才扣除次数，提交前中断不会回血或消耗次数。
-- 战斗开始后可锁定当前 Boss，镜头平滑追踪目标；目标失效、死亡、超出锁定距离或结束战斗时解除锁定。
+## 主要功能
 
-### 战斗与 Boss AI
+**1. 玩家战斗与控制**
 
-- 玩家与 Boss 各自持有 ASC 和 AttributeSet，GAS 管理生命、耐力、动作互斥、费用、伤害和状态 Tag；独立组件管理玩家跨动作的延迟耐力恢复。
-- 近战检测绑定 Montage 播放实例和 Notify 窗口，连续扫掠武器并按窗口去重；目标侧统一处理终止状态、闪避无敌、其他来源无敌和伤害 Effect。
-- 每个命中窗口独立配置受击资格；受击组件管理短硬直和受击 Montage，死亡组件负责一次性死亡状态与动作清理。
-- Boss 当前实现第一阶段四招：单次挥击、连续挥击、蓄力重挥、突进追击后挥击。
-- StateTree 编排 Decide、Approach、Observe、Attack、Recovery；Utility Scoring 根据距离、朝向、冷却与近期使用历史选择攻击。
-- Pressure 预算在攻击请求受理后累积，耗尽后进入 Observe 喘息，下降至恢复阈值后重新允许进攻；只有观察阶段释放预算。
+基于 Enhanced Input 处理移动、镜头、攻击、闪避、治疗和锁定。玩家可以锁定当前 Boss，镜头随目标平滑追踪；锁定后轻击可在满足条件时辅助调整朝向和接近目标。
 
-### 对局与表现
+轻击支持点按与长按连招；重击持续消耗耐力，伤害随实际消耗量变化，并可在蓄力阶段通过闪避取消。闪避通过位移 Sweep 处理地形与阻挡，治疗在动画指定时刻成功生效后消耗次数。
 
-- 入口 Trigger 启动可配置的 Boss 出场 Level Sequence；演出期间关闭 Gameplay 输入并隐藏玩家状态栏，结束后恢复视角、输入并启动 Boss AI。没有配置 Sequence 时直接进入战斗。
-- HUD 观察玩家生命、耐力、治疗次数和 Boss 生命；战斗开始后显示 Boss 血条。
-- 命中与死亡反馈组件按结果播放配置的声音和粒子；GameMode 管理可选战斗音乐的淡入、胜负淡出和退出清理。
-- 首个有效死亡报告锁定胜负；死亡表现结束并经过配置的停留时间后显示结算与 Retry，重试重新加载当前关卡。
+**2. GAS 与近战伤害**
 
-## 架构
+玩家和 Boss 各自持有 Ability System Component 和 AttributeSet，通过 GameplayAbility、GameplayEffect 和 GameplayTag 管理动作、费用、生命、耐力和角色状态。耐力消耗后延迟恢复。
 
-项目包含两个运行时模块：
+近战攻击通过 Montage Notify 开启命中窗口，连续扫掠武器并在窗口内对目标去重。目标侧处理伤害、无敌判定、受击硬直和死亡；Montage 播放实例用于区分当前动作与过期动画回调。
 
-| 模块 | 职责 |
-|---|---|
-| `AshenOath` | 组装输入、玩家与 Boss、GAS Ability 与 ActionData、Boss 决策和 StateTree、镜头、动画、对局、UI 与音效反馈 |
-| `AshenOathCombat` | 提供不依赖具体角色类型的近战检测、防御窗口、目标侧伤害、受击、死亡、目标持有和代码位移 Task |
+**3. Boss AI**
 
-战斗动作由具体 `GameplayAbility` 持有生命周期：
+Boss 拥有单次挥击、连续挥击、蓄力重挥和突进挥击四种招式。StateTree 编排决策、接近、观察、攻击和恢复，Utility Scoring 根据距离、朝向、冷却和近期出招选择动作。
 
-- `UAshenOathMeleeAttackAbility` 统一管理玩家与 Boss 近战的 Montage、Cost、检测会话和清理；具体 Ability 保留连招、蓄力或 Boss 招式的流程状态。
-- `UAshenOathDodgeAbility` 协调 Montage、Cost、位移 Task 和闪避窗口。
-- `UAshenOathHealAbility` 管理治疗 Montage、动画来源身份和治疗次数提交。
-- ActionData 只保存配置；AbilityTask 管理随本次执行结束的异步工作，组件管理可复用算法和跨动作状态。Combat 模块通过参数接收所需配置。
+Pressure 随已受理的攻击累积，达到上限后 Boss 进入喘息；观察阶段释放 Pressure，降至恢复阈值后继续进攻。
 
-依赖方向保持单向：`AshenOath` 负责组装 `AshenOathCombat`；通用战斗模块不引用具体玩家、Boss 或 UI 类型。
+**4. 对局流程与表现**
 
-## 文档
+进入竞技场后可播放 Boss 出场 Sequence，演出结束后开放玩家操作并启动 Boss AI。首个有效死亡报告确定胜负，等待死亡表现和收尾后显示结算界面，玩家可重新加载当前关卡重试。
 
-- [UE5 / C++ 面试准备：12 天计划与项目深挖](docs/reference/interview-preparation.md)
+HUD 展示玩家生命、耐力、治疗次数、重击蓄力状态和 Boss 生命。战斗包含命中、受击、死亡的声音与粒子反馈，以及死亡后的物理和表现收尾；具体素材由项目资产配置。
+
+**5. 模块设计**
+
+`AshenOath` 负责组装角色、输入、GAS Ability、Boss AI、镜头、对局和 UI。`AshenOathCombat` 提供近战检测、防御窗口、伤害、受击、死亡、目标持有和位移 Task，依赖方向为 `AshenOath → AshenOathCombat`。
+
+具体 GameplayAbility 管理单次动作生命周期，AbilityTask 处理异步工作，ActionData 保存配置；通用战斗组件不依赖具体玩家、Boss 或 UI 类型。
+
+### 项目文档
+
 - [架构总览](docs/arch/architecture.md)
-- [战斗动作与伤害](docs/systems/combat-actions.md)
-- [GAS 与属性系统](docs/systems/ability-system.md)
-- [Boss AI 与 Pressure 预算](docs/systems/boss-ai.md)
-- [玩家控制、自由镜头与锁定](docs/systems/player-control-camera.md)
-- [动画移动表现](docs/systems/locomotion-animation.md)
-- [ADR：Character 持有 Ability System](docs/adr/0001-character-owned-ability-system.md)
-- [ADR：Controller 与 Character 的输入边界](docs/adr/0002-player-input-and-character-boundary.md)
-- [ADR：GameplayAbility 拥有动作生命周期](docs/adr/0003-gameplay-ability-owns-combat-action-lifecycle.md)
+- [GAS 与属性](docs/systems/ability-system.md) · [战斗动作与伤害](docs/systems/combat-actions.md)
+- [Boss AI](docs/systems/boss-ai.md) · [对局流程](docs/systems/match-flow.md)
+- [架构决策：Character 持有 Ability System](docs/adr/0001-character-owned-ability-system.md)
+- [架构决策：Controller 与 Character 的输入边界](docs/adr/0002-player-input-and-character-boundary.md)
+- [架构决策：GameplayAbility 拥有动作生命周期](docs/adr/0003-gameplay-ability-owns-combat-action-lifecycle.md)

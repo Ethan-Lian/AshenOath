@@ -10,6 +10,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "GameplayEffect.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 UCombatMeleeComponent::UCombatMeleeComponent()
 {
@@ -263,6 +264,7 @@ void UCombatMeleeComponent::TickHitWindow(
 	const FCombatMeleeSessionHandle& SessionHandle,
 	const int32 NotifyInstanceId)
 {
+  TRACE_CPUPROFILER_EVENT_SCOPE(AshenOath_MeleeHitWindow);
 	if (!OwnsHitWindow(SessionHandle, NotifyInstanceId))
 	{
 		return;
@@ -399,15 +401,19 @@ void UCombatMeleeComponent::SweepMeleeSegment(
 
 	TArray<FHitResult> HitResults;
 
-	World->SweepMultiByObjectType(
-		HitResults,
-		Start,
-		End,
-		FQuat::Identity,
-		ObjectQueryParams,
-		FCollisionShape::MakeSphere(ActiveMeleeTraceRadius),
-		QueryParams
-	);
+	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(AshenOath_MeleeSweepQuery);
+
+		World->SweepMultiByObjectType(
+			HitResults,
+			Start,
+			End,
+			FQuat::Identity,
+			ObjectQueryParams,
+			FCollisionShape::MakeSphere(ActiveMeleeTraceRadius),
+			QueryParams
+		);
+	}
 
 	for (const FHitResult& HitResult : HitResults)
 	{

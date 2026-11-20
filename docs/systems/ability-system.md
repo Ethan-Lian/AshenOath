@@ -32,8 +32,3 @@ PreAttributeChange 限制新值，PostAttributeChange 维护 Max 与 Current 的
 - 通用 CostEffect 成功应用后重启延迟，不额外检查实际扣除量；无 CostEffect 的动作不通知。
 - 重击使用独立蓄力费用，确认实际消耗后才通知。
 - 请求被拒绝不影响已有恢复；死亡和退出停止计时器并移除所属 Effect。
-
-## 踩坑/变更
-
-- 取消 Ability 必须早于 ClearActorInfo，否则 Task 清理时可能已经失去动画和 GAS 上下文。
-- UnPossessed 期间不能把 ActorInfo 缓存的 Controller 当作有效占有关系。

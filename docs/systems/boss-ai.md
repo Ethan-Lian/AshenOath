@@ -32,8 +32,3 @@ Pressure 控制是否继续进攻，不参与招式评分。
 Task 保存本次攻击请求句柄，只接受匹配的结束通知；退出先解除监听，再按句柄取消自己的攻击。SpecHandle 不承担这层请求身份。
 
 StateTree 显式启动，入口演出结束才开放；初始化和退出顺序见 [GAS](ability-system.md)，战斗开始条件见 [对局流程](match-flow.md)。
-
-## 踩坑/变更
-
-- 只有 Rejected 才尝试排名中的下一招，同步 Failed 不继续出招。
-- 冷却从请求受理时开始；历史放在随 Boss 存续的组件里，不能随 StateTree Task 重建而丢失。
