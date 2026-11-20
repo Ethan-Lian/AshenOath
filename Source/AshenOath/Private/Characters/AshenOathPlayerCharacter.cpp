@@ -21,6 +21,7 @@
 #include "AbilitySystem/Ability/AshenOathHealAbility.h"
 #include "Reaction/CombatHitReactionComponent.h"
 #include "Death/CombatDeathComponent.h"
+#include "Feedback/AshenOathCombatFeedbackComponent.h"
 #include "GameplayAbilitySpec.h"
 #include "Characters/AshenOathBossCharacter.h"
 #include "Game/AshenOathGameMode.h"
@@ -43,6 +44,8 @@ AAshenOathPlayerCharacter::AAshenOathPlayerCharacter()
 	CameraBoom->SetupAttachment(GetRootComponent());
 	CameraBoom->bUsePawnControlRotation = true;
 	CameraBoom->bDoCollisionTest = true;
+	CameraBoom->TargetArmLength = 450.0f;
+	CameraBoom->TargetOffset = FVector(0.0f, 0.0f, 80.0f);
 
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
@@ -56,12 +59,8 @@ AAshenOathPlayerCharacter::AAshenOathPlayerCharacter()
 	CombatMeleeComponent = CreateDefaultSubobject<UCombatMeleeComponent>(TEXT("CombatMeleeComponent"));
 	CombatDamageComponent = CreateDefaultSubobject<UCombatDamageComponent>(TEXT("CombatDamageComponent"));
 	CombatDefenseComponent = CreateDefaultSubobject<UCombatDefenseComponent>(TEXT("CombatDefenseComponent"));
-	StaminaRecoveryComponent = CreateDefaultSubobject<UAshenOathStaminaRecoveryComponent>(
-		TEXT("StaminaRecoveryComponent")
-	);
-	HitReactionComponent = CreateDefaultSubobject<UCombatHitReactionComponent>(
-		TEXT("HitReactionComponent")
-	);
+	StaminaRecoveryComponent = CreateDefaultSubobject<UAshenOathStaminaRecoveryComponent>(TEXT("StaminaRecoveryComponent"));
+	HitReactionComponent = CreateDefaultSubobject<UCombatHitReactionComponent>(TEXT("HitReactionComponent"));
 	HitReactionComponent->ConfigureGameplayTags(
 		AshenOathGameplayTags::State_Staggered,
 		AshenOathGameplayTags::State_Dead,
@@ -74,6 +73,10 @@ AAshenOathPlayerCharacter::AAshenOathPlayerCharacter()
 		UAshenOathAttributeSet::GetHealthAttribute(),
 		AshenOathGameplayTags::State_Dead
 	);
+	CombatFeedbackComponent = CreateDefaultSubobject<UAshenOathCombatFeedbackComponent>(
+		TEXT("CombatFeedbackComponent")
+	);
+	CombatFeedbackComponent->ConfigureDeathAnimationDrivenBone(TEXT("weapon_r"));
 
 	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 
@@ -90,6 +93,7 @@ AAshenOathPlayerCharacter::AAshenOathPlayerCharacter()
 void AAshenOathPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+	FreeCameraTargetOffset = CameraBoom->TargetOffset;
 
 	if (CombatTargetingComponent)
 	{
@@ -104,6 +108,9 @@ void AAshenOathPlayerCharacter::BeginPlay()
 		DeathStartedHandle = DeathComponent->OnDeathStarted().AddUObject(
 			this,
 			&AAshenOathPlayerCharacter::HandleDeathStarted
+		);
+		DeathPresentationFinishedHandle = DeathComponent->OnDeathPresentationFinished().AddUObject(
+			this, &AAshenOathPlayerCharacter::HandleDeathPresentationFinished
 		);
 	}
 
@@ -194,6 +201,11 @@ void AAshenOathPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason
 	{
 		DeathComponent->OnDeathStarted().Remove(DeathStartedHandle);
 		DeathStartedHandle.Reset();
+	}
+	if (DeathComponent && DeathPresentationFinishedHandle.IsValid())
+	{
+		DeathComponent->OnDeathPresentationFinished().Remove(DeathPresentationFinishedHandle);
+		DeathPresentationFinishedHandle.Reset();
 	}
 
 	if (AbilitySystemComponent && MovementLockedStateChangedHandle.IsValid())
@@ -330,6 +342,36 @@ bool AAshenOathPlayerCharacter::RequestComboAttack()
 		AbilitySystemComponent->TryActivateAbility(ComboAttackAbilitySpecHandle);
 }
 
+bool AAshenOathPlayerCharacter::RequestComboAttackPressed()
+{
+	const bool bAccepted = RequestComboAttack();
+	FGameplayAbilitySpec* Spec = AbilitySystemComponent
+		? AbilitySystemComponent->FindAbilitySpecFromHandle(ComboAttackAbilitySpecHandle)
+		: nullptr;
+	if (Spec && Spec->IsActive())
+	{
+		if (UAshenOathComboAttackAbility* Combo = Cast<UAshenOathComboAttackAbility>(Spec->GetPrimaryInstance()))
+		{
+			return Combo->HandleInputPressed();
+		}
+	}
+	return bAccepted;
+}
+
+void AAshenOathPlayerCharacter::RequestComboAttackReleased()
+{
+	FGameplayAbilitySpec* Spec = AbilitySystemComponent
+		? AbilitySystemComponent->FindAbilitySpecFromHandle(ComboAttackAbilitySpecHandle)
+		: nullptr;
+	if (Spec && Spec->IsActive())
+	{
+		if (UAshenOathComboAttackAbility* Combo = Cast<UAshenOathComboAttackAbility>(Spec->GetPrimaryInstance()))
+		{
+			Combo->HandleInputReleased();
+		}
+	}
+}
+
 bool AAshenOathPlayerCharacter::RequestHeavyAttackPressed()
 {
 	if (!AbilitySystemComponent || IsActorBeingDestroyed() ||
@@ -356,6 +398,14 @@ bool AAshenOathPlayerCharacter::RequestHeavyAttackPressed()
 	return AbilitySystemComponent->TryActivateAbility(
 		HeavyAttackAbilitySpecHandle
 	);
+}
+
+FAshenOathChargeState AAshenOathPlayerCharacter::GetHeavyChargeState() const
+{
+	const FGameplayAbilitySpec* Spec = AbilitySystemComponent->FindAbilitySpecFromHandle(HeavyAttackAbilitySpecHandle);
+	const UAshenOathHeavyAttackAbility* Ability = Spec && Spec->IsActive()
+		? Cast<UAshenOathHeavyAttackAbility>(Spec->GetPrimaryInstance()) : nullptr;
+	return Ability ? Ability->GetChargeState() : FAshenOathChargeState();
 }
 
 bool AAshenOathPlayerCharacter::RequestHeavyAttackReleased()
@@ -457,9 +507,8 @@ bool AAshenOathPlayerCharacter::RequestDodge(const FVector2D& MovementIntent)
 
 	const FVector2D DodgeIntent = MovementIntent.GetSafeNormal();
 
-	// A rear cone preserves target-facing for the backward asset. Every other
-	// direction aligns the forward dodge animation with its displacement.
-	const bool bWantsBackwardDodge = DodgeIntent.Y < -0.5f;
+	// Only locked movement preserves target-facing for the backward asset.
+	const bool bWantsBackwardDodge = IsLockedOn() && DodgeIntent.Y < -0.5f;
 	const FGameplayAbilitySpecHandle DodgeAbilityHandle = bWantsBackwardDodge
 		? BackwardDodgeAbilitySpecHandle
 		: ForwardDodgeAbilitySpecHandle;
@@ -544,7 +593,8 @@ bool AAshenOathPlayerCharacter::RequestToggleLockOn()
 		? World->GetAuthGameMode<AAshenOathGameMode>()
 		: nullptr;
 
-	return GameMode && CombatTargetingComponent->TrySetTarget(GameMode->GetActiveBoss());
+	return GameMode && GameMode->IsCombatActive() &&
+		CombatTargetingComponent->TrySetTarget(GameMode->GetActiveBoss());
 }
 
 void AAshenOathPlayerCharacter::RequestClearLockOn()
@@ -555,13 +605,24 @@ void AAshenOathPlayerCharacter::RequestClearLockOn()
 	}
 }
 
+void AAshenOathPlayerCharacter::PrepareForBossIntro()
+{
+	CancelCombatAbilities();
+
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->StopMovementImmediately();
+	}
+}
+
 bool AAshenOathPlayerCharacter::IsLockedOn() const
 {
 	return CombatTargetingComponent && CombatTargetingComponent->HasTarget();
 }
 
-void AAshenOathPlayerCharacter::HandleDeathStarted()
+void AAshenOathPlayerCharacter::StopCombatForMatchEnd()
 {
+	CombatFeedbackComponent->StopCombatVocals();
 	RequestClearLockOn();
 	CancelCombatAbilities();
 
@@ -589,8 +650,13 @@ void AAshenOathPlayerCharacter::HandleDeathStarted()
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
 		Movement->StopMovementImmediately();
-		Movement->DisableMovement();
 	}
+}
+
+void AAshenOathPlayerCharacter::HandleDeathStarted()
+{
+	StopCombatForMatchEnd();
+	GetCharacterMovement()->DisableMovement();
 
 	if (UWorld* World = GetWorld())
 	{
@@ -598,6 +664,17 @@ void AAshenOathPlayerCharacter::HandleDeathStarted()
 			World->GetAuthGameMode<AAshenOathGameMode>())
 		{
 			GameMode->ReportPlayerDeath(this);
+		}
+	}
+}
+
+void AAshenOathPlayerCharacter::HandleDeathPresentationFinished()
+{
+	if (UWorld* World = GetWorld())
+	{
+		if (AAshenOathGameMode* GameMode = World->GetAuthGameMode<AAshenOathGameMode>())
+		{
+			GameMode->ReportDeathPresentationFinished(this);
 		}
 	}
 }
@@ -634,22 +711,27 @@ void AAshenOathPlayerCharacter::UpdateLockedView(const float DeltaSeconds)
 		? CombatTargetingComponent->GetTarget()
 		: nullptr;
 	AController* CurrentController = GetController();
+	const bool bHasTarget = IsValid(Target) && CurrentController;
+	const FVector DesiredCameraOffset = FreeCameraTargetOffset +
+		FVector(0.0f, 0.0f, bHasTarget ? LockOnCameraHeight : 0.0f);
+	CameraBoom->TargetOffset = FMath::VInterpTo(
+		CameraBoom->TargetOffset, DesiredCameraOffset, DeltaSeconds, LockOnViewInterpSpeed);
 
-	if (!IsValid(Target) || !CurrentController)
+	if (!bHasTarget)
 	{
 		return;
 	}
 
-	FVector TargetOrigin = Target->GetActorLocation();
-	FVector TargetExtent = FVector::ZeroVector;
-	Target->GetActorBounds(true, TargetOrigin, TargetExtent);
-
-	// Bias above the bounds center so a large Boss remains readable in frame.
-	const FVector FocusPoint = TargetOrigin + FVector(0.0f, 0.0f, TargetExtent.Z * 0.2f);
+	const FVector FocusPoint = Target->GetActorLocation() + FVector(0.0f, 0.0f, LockOnFocusHeight);
 	const FVector ViewOrigin = FollowCamera
 		? FollowCamera->GetComponentLocation()
 		: GetPawnViewLocation();
 	FRotator DesiredViewRotation = (FocusPoint - ViewOrigin).Rotation();
+	// Leave room below the target for the player and ground instead of lowering
+	// the spring-arm camera to keep an elevated target exactly at screen center.
+	DesiredViewRotation.Pitch = FMath::Clamp(
+		DesiredViewRotation.Pitch + LockOnPitchBias,
+		static_cast<float>(LockOnPitchRange.X), static_cast<float>(LockOnPitchRange.Y));
 	DesiredViewRotation.Roll = 0.0f;
 
 	const FRotator SmoothedViewRotation = FMath::RInterpTo(
@@ -663,11 +745,6 @@ void AAshenOathPlayerCharacter::UpdateLockedView(const float DeltaSeconds)
 
 void AAshenOathPlayerCharacter::RefreshFacingMode()
 {
-	// arbitrate the three owners.
-	// Free movement: orient to movement.
-	// Lock-on: use controller desired rotation.
-	// State.MovementLocked/State.Staggered/State.Dead: neither system may keep
-	// rotating the Character.
 
 	UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
 

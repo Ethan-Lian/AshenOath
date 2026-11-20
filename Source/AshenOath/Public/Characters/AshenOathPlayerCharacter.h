@@ -4,6 +4,7 @@
 #include "AbilitySystemInterface.h"
 #include "GameFramework/Character.h"
 #include "GameplayAbilitySpecHandle.h"
+#include "Feedback/AshenOathChargeState.h"
 #include "AshenOathPlayerCharacter.generated.h"
 
 class UAshenOathAttributeSet;
@@ -28,9 +29,11 @@ class UAshenOathDodgeAbility;
 class UAshenOathStaminaRecoveryComponent;
 class UCombatHitReactionComponent;
 class UCombatDeathComponent;
+class UAshenOathCombatFeedbackComponent;
 class UCombatTargetingComponent;
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnAshenOathHealUsesChanged, int32);
+DECLARE_MULTICAST_DELEGATE(FOnAshenOathHeavyChargeChanged);
 
 /**
  * Player-side GAS host, movement and combat actions.
@@ -53,11 +56,16 @@ public:
 	// True means GAS accepted the activation request. It does not mean the
 	// animation/cost/damage transaction has already completed.
 	bool RequestComboAttack();
+	// Device press/release supports both taps and holding through Combo Windows.
+	bool RequestComboAttackPressed();
+	void RequestComboAttackReleased();
 
 	// Press starts the tap-or-hold decision; release resolves the active Heavy
 	// Ability without exposing its internal phase to the Controller.
 	bool RequestHeavyAttackPressed();
 	bool RequestHeavyAttackReleased();
+	FAshenOathChargeState GetHeavyChargeState() const;
+	FOnAshenOathHeavyChargeChanged& OnHeavyChargeChanged() { return HeavyChargeChangedEvent; }
 
 	// Requests one interruptible Cast. The accepted request does not spend a use.
 	bool RequestHeal();
@@ -76,6 +84,12 @@ public:
 	// Clears the current lock target, if any.
 	void RequestClearLockOn();
 
+	// Stops any current action and movement before the entrance sequence takes control.
+	void PrepareForBossIntro();
+
+	// Stops gameplay while death presentation continues to animate.
+	void StopCombatForMatchEnd();
+
 	// Returns whether a valid lock target is currently owned.
 	bool IsLockedOn() const;
 
@@ -89,6 +103,7 @@ protected:
 
 private:
 	friend class UAshenOathHealAbility;
+	friend class UAshenOathHeavyAttackAbility;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AshenOath|AbilitySystem",
 		meta = (AllowPrivateAccess = "true"))
@@ -126,6 +141,10 @@ private:
 		meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UCombatDeathComponent> DeathComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AshenOath|Feedback",
+		meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAshenOathCombatFeedbackComponent> CombatFeedbackComponent;
+
 	// Immutable configuration supplied to the granted combo-attack AbilitySpec.
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat")
 	TObjectPtr<UAshenOathComboAttackData> ComboAttackAction;
@@ -143,6 +162,7 @@ private:
 	TSubclassOf<UAshenOathHeavyAttackAbility> HeavyAttackAbilityClass;
 
 	FGameplayAbilitySpecHandle HeavyAttackAbilitySpecHandle;
+	FOnAshenOathHeavyChargeChanged HeavyChargeChangedEvent;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Heal")
 	TObjectPtr<UAshenOathHealActionData> HealAction;
@@ -192,9 +212,26 @@ private:
 		meta = (ClampMin = "0.0"))
 	float LockOnViewInterpSpeed = 8.0f;
 
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Lock On", meta = (Units = "cm"))
+	float LockOnCameraHeight = 40.0f;
+
+	// Stable torso offset from the target actor origin, independent of animated bounds.
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Lock On", meta = (Units = "cm"))
+	float LockOnFocusHeight = 40.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Lock On", meta = (Units = "deg"))
+	float LockOnPitchBias = -10.0f;
+
+	// X is the lowest pitch, Y the highest. Zero is horizontal; negative looks down.
+	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Lock On", meta = (Units = "deg"))
+	FVector2D LockOnPitchRange = FVector2D(-35.0f, 0.0f);
+
+	FVector FreeCameraTargetOffset = FVector::ZeroVector;
+
 	// PossessedBy may run again after repossession; initial stats are applied only once.
 	bool bInitialAttributesApplied = false;
 	FDelegateHandle DeathStartedHandle;
+	FDelegateHandle DeathPresentationFinishedHandle;
 	FDelegateHandle MovementLockedStateChangedHandle;
 	FDelegateHandle StaggeredStateChangedHandle;
 	FDelegateHandle LockTargetChangedHandle;
@@ -203,6 +240,7 @@ private:
 	void ApplyInitialAttributes();
 
 	void HandleDeathStarted();
+	void HandleDeathPresentationFinished();
 	void HandleMovementLockedStateChanged(const FGameplayTag Tag, int32 NewCount);
 	void HandleLockTargetChanged(AActor* PreviousTarget, AActor* NewTarget);
 	void UpdateLockedView(float DeltaSeconds);

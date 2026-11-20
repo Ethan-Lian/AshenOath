@@ -1,4 +1,4 @@
-﻿#include "UI/AshenOathPlayerStatusWidget.h"
+#include "UI/AshenOathPlayerStatusWidget.h"
 
 #include "AbilitySystemComponent.h"
 #include "AbilitySystem/AshenOathAttributeSet.h"
@@ -13,7 +13,7 @@ void UAshenOathPlayerStatusWidget::ObservePlayer(AAshenOathPlayerCharacter* Play
 
 	if (!IsValid(Player))
 	{
-		SetVisibility(ESlateVisibility::Collapsed);
+		RefreshVisibility();
 		return;
 	}
 
@@ -21,7 +21,7 @@ void UAshenOathPlayerStatusWidget::ObservePlayer(AAshenOathPlayerCharacter* Play
 
 	if (!IsValid(AbilitySystemComponent))
 	{
-		SetVisibility(ESlateVisibility::Collapsed);
+		RefreshVisibility();
 		return;
 	}
 
@@ -29,6 +29,8 @@ void UAshenOathPlayerStatusWidget::ObservePlayer(AAshenOathPlayerCharacter* Play
 	ObservedPlayer = Player;
 	HealUsesChangedHandle = Player->OnHealUsesChanged().AddUObject(
 		this, &UAshenOathPlayerStatusWidget::HandleHealUsesChanged);
+	HeavyChargeChangedHandle = Player->OnHeavyChargeChanged().AddUObject(
+		this, &UAshenOathPlayerStatusWidget::RefreshCharge);
 
 	HealthChangedHandle =
 		AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(UAshenOathAttributeSet::GetHealthAttribute())
@@ -46,12 +48,47 @@ void UAshenOathPlayerStatusWidget::ObservePlayer(AAshenOathPlayerCharacter* Play
 		AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(UAshenOathAttributeSet::GetMaxStaminaAttribute())
 			.AddUObject(this, &UAshenOathPlayerStatusWidget::HandleAttributeChanged);
 
-	SetVisibility(ESlateVisibility::HitTestInvisible);
+	RefreshVisibility();
 
 	RefreshHealth();
 
 	RefreshStamina();
 	RefreshHealUses();
+	RefreshCharge();
+}
+
+void UAshenOathPlayerStatusWidget::RefreshCharge()
+{
+	const AAshenOathPlayerCharacter* Player = ObservedPlayer.Get();
+	const FAshenOathChargeState State = Player ? Player->GetHeavyChargeState() : FAshenOathChargeState();
+	const ESlateVisibility ChargeVisibility = State.bCharging ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+	if (ChargeBar)
+	{
+		ChargeBar->SetVisibility(ChargeVisibility);
+		ChargeBar->SetPercent(State.ChargeAlpha);
+		ChargeBar->SetFillColorAndOpacity(State.bCanRelease
+			? FLinearColor(1.0f, 0.42f, 0.06f) : FLinearColor(0.5f, 0.12f, 0.025f));
+	}
+	if (ChargeText)
+	{
+		ChargeText->SetVisibility(ChargeVisibility);
+		ChargeText->SetText(State.bCanRelease
+			? NSLOCTEXT("AshenOathUI", "HeavyChargeReady", "松开出招")
+			: NSLOCTEXT("AshenOathUI", "HeavyCharging", "蓄力中"));
+	}
+}
+
+void UAshenOathPlayerStatusWidget::SetIntroPlaying(const bool bPlaying)
+{
+	bIntroPlaying = bPlaying;
+	RefreshVisibility();
+}
+
+void UAshenOathPlayerStatusWidget::RefreshVisibility()
+{
+	SetVisibility(!bIntroPlaying && ObservedAbilitySystem.IsValid()
+		? ESlateVisibility::HitTestInvisible
+		: ESlateVisibility::Collapsed);
 }
 
 void UAshenOathPlayerStatusWidget::NativeDestruct()
@@ -146,9 +183,12 @@ void UAshenOathPlayerStatusWidget::UnbindAttributes()
 		{
 			Player->OnHealUsesChanged().Remove(HealUsesChangedHandle);
 		}
+		Player->OnHeavyChargeChanged().Remove(HeavyChargeChangedHandle);
 	}
+	HeavyChargeChangedHandle.Reset();
 	HealUsesChangedHandle.Reset();
 	ObservedPlayer.Reset();
+	RefreshCharge();
 
 	if (UAbilitySystemComponent* AbilitySystem = ObservedAbilitySystem.Get())
 	{

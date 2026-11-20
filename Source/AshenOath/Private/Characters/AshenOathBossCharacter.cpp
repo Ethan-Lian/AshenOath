@@ -15,6 +15,7 @@
 #include "Actions/CombatMeleeComponent.h"
 #include "Reaction/CombatHitReactionComponent.h"
 #include "Death/CombatDeathComponent.h"
+#include "Feedback/AshenOathCombatFeedbackComponent.h"
 #include "Components/StateTreeComponent.h"
 #include "Damage/CombatDamageComponent.h"
 #include "Game/AshenOathGameMode.h"
@@ -52,6 +53,9 @@ AAshenOathBossCharacter::AAshenOathBossCharacter()
 		UAshenOathAttributeSet::GetHealthAttribute(),
 		AshenOathGameplayTags::State_Dead
 	);
+	CombatFeedbackComponent = CreateDefaultSubobject<UAshenOathCombatFeedbackComponent>(
+		TEXT("CombatFeedbackComponent")
+	);
 
 	SingleSwingAbilityClass = UAshenOathBossSingleSwingAbility::StaticClass();
 	ComboAbilityClass = UAshenOathBossComboAbility::StaticClass();
@@ -79,6 +83,9 @@ void AAshenOathBossCharacter::BeginPlay()
 	DeathStartedHandle = DeathComponent->OnDeathStarted().AddUObject(
 		this,
 		&AAshenOathBossCharacter::HandleDeathStarted
+	);
+	DeathPresentationFinishedHandle = DeathComponent->OnDeathPresentationFinished().AddUObject(
+		this, &AAshenOathBossCharacter::HandleDeathPresentationFinished
 	);
 	ApplyInitialAttributes();
 
@@ -110,15 +117,39 @@ void AAshenOathBossCharacter::BeginPlay()
 	{
 		return;
 	}
+}
+
+void AAshenOathBossCharacter::StartCombatLogic()
+{
+	UWorld* World = GetWorld();
+	AAshenOathGameMode* GameMode = World
+		? World->GetAuthGameMode<AAshenOathGameMode>()
+		: nullptr;
+
+	if (!GameMode ||
+		GameMode->GetActiveBoss() != this ||
+		!GameMode->IsCombatActive() ||
+		DeathComponent->IsDeathStarted() ||
+		StateTreeComponent->IsRunning())
+	{
+		return;
+	}
+
 	StateTreeComponent->StartLogic();
 }
 
 void AAshenOathBossCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	DecisionComponent->ClearPendingCombatDecision();
 	if (DeathComponent && DeathStartedHandle.IsValid())
 	{
 		DeathComponent->OnDeathStarted().Remove(DeathStartedHandle);
 		DeathStartedHandle.Reset();
+	}
+	if (DeathComponent && DeathPresentationFinishedHandle.IsValid())
+	{
+		DeathComponent->OnDeathPresentationFinished().Remove(DeathPresentationFinishedHandle);
+		DeathPresentationFinishedHandle.Reset();
 	}
 
 	if (StateTreeComponent)
@@ -225,19 +256,6 @@ void AAshenOathBossCharacter::CancelSingleSwing()
 	}
 }
 
-#if WITH_DEV_AUTOMATION_TESTS
-void AAshenOathBossCharacter::GrantSingleSwingForTesting(UAshenOathMeleeActionData* ActionData)
-{
-	if (!IsValid(ActionData) || SingleSwingAbilitySpecHandle.IsValid())
-	{
-		return;
-	}
-
-	SingleSwingAction = ActionData;
-	GrantConfiguredAbilities();
-}
-#endif
-
 bool AAshenOathBossCharacter::GrantConfiguredAbilities()
 {
 	if (!GrantAbilityIfNeeded(
@@ -310,11 +328,13 @@ void AAshenOathBossCharacter::HandleAbilityEnded(const FAbilityEndedData& EndedD
 	}
 }
 
-void AAshenOathBossCharacter::HandleDeathStarted()
+void AAshenOathBossCharacter::StopCombatForMatchEnd()
 {
+	CombatFeedbackComponent->StopCombatVocals();
+	DecisionComponent->ClearPendingCombatDecision();
 	if (StateTreeComponent)
 	{
-		StateTreeComponent->StopLogic(TEXT("Boss died"));
+		StateTreeComponent->StopLogic(TEXT("Match ended"));
 	}
 	ClearPendingCombatDecision();
 
@@ -338,8 +358,13 @@ void AAshenOathBossCharacter::HandleDeathStarted()
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
 		Movement->StopMovementImmediately();
-		Movement->DisableMovement();
 	}
+}
+
+void AAshenOathBossCharacter::HandleDeathStarted()
+{
+	StopCombatForMatchEnd();
+	GetCharacterMovement()->DisableMovement();
 
 	if (UWorld* World = GetWorld())
 	{
@@ -347,6 +372,17 @@ void AAshenOathBossCharacter::HandleDeathStarted()
 			World->GetAuthGameMode<AAshenOathGameMode>())
 		{
 			GameMode->ReportBossDeath(this);
+		}
+	}
+}
+
+void AAshenOathBossCharacter::HandleDeathPresentationFinished()
+{
+	if (UWorld* World = GetWorld())
+	{
+		if (AAshenOathGameMode* GameMode = World->GetAuthGameMode<AAshenOathGameMode>())
+		{
+			GameMode->ReportDeathPresentationFinished(this);
 		}
 	}
 }
@@ -475,15 +511,21 @@ FAshenOathBossAttackStartResult AAshenOathBossCharacter::ResolveBossAttackStart(
 bool AAshenOathBossCharacter::ChooseFirstPhaseCombatIntent(
 	AActor* TargetActor,
 	const float MeleeRange,
-	const float DashMinStartRange)
+	const float DashMinStartRange,
+	const float DashMaxStartRange)
 {
 	return DecisionComponent->ChooseFirstPhaseCombatIntent(
-		TargetActor, MeleeRange, DashMinStartRange);
+		TargetActor, MeleeRange, DashMinStartRange, DashMaxStartRange);
 }
 
 EAshenOathBossCombatIntent AAshenOathBossCharacter::GetPendingCombatIntent()
 {
 	return DecisionComponent->GetPendingCombatIntent();
+}
+
+bool AAshenOathBossCharacter::ReconsiderCombatIntent()
+{
+	return DecisionComponent->ReconsiderCombatIntent();
 }
 
 void AAshenOathBossCharacter::ClearPendingCombatDecision()

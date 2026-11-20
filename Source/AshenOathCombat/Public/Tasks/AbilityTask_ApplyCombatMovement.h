@@ -52,6 +52,9 @@ public:
 	virtual void OnDestroy(bool bInOwnerFinished) override;
 
 private:
+	void ApplyMovementDelta(const FVector& Delta);
+	FVector ComputeFloorDelta(const FVector& Delta, const FHitResult& FloorHit) const;
+
 	void BeginMovementControl();
 	
 	void EndMovementControl();

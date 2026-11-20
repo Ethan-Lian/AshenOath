@@ -23,6 +23,7 @@ class UAshenOathBossChargedSwingAbility;
 class UAshenOathBossDashSwingAbility;
 class UCombatHitReactionComponent;
 class UCombatDeathComponent;
+class UAshenOathCombatFeedbackComponent;
 class UAshenOathBossDecisionComponent;
 class AActor;
 struct FAbilityEndedData;
@@ -94,6 +95,10 @@ public:
 
 	const UAshenOathAttributeSet* GetAttributeSet() const;
 
+	// GameMode calls this after the arena entrance sequence finishes.
+	void StartCombatLogic();
+	void StopCombatForMatchEnd();
+
 	// True means GAS accepted the configured single-swing activation request.
 	bool RequestSingleSwing();
 	bool IsSingleSwingActive() const;
@@ -103,11 +108,6 @@ public:
 	{
 		return SingleSwingEndedEvent;
 	}
-
-#if WITH_DEV_AUTOMATION_TESTS
-	// Supplies transient test configuration without exposing mutable runtime setup.
-	void GrantSingleSwingForTesting(UAshenOathMeleeActionData* ActionData);
-#endif
 
 	DECLARE_MULTICAST_DELEGATE_TwoParams(
 	FAshenOathBossAttackEndedEvent,
@@ -124,10 +124,12 @@ public:
 	bool ChooseFirstPhaseCombatIntent(
 		AActor* TargetActor,
 		float MeleeRange,
-		float DashMinStartRange
+		float DashMinStartRange,
+		float DashMaxStartRange
 	);
 
 	EAshenOathBossCombatIntent GetPendingCombatIntent();
+	bool ReconsiderCombatIntent();
 	void ClearPendingCombatDecision();
 	bool IsCurrentCombatTarget(const AActor* TargetActor) const;
 
@@ -167,6 +169,7 @@ private:
 	void HandleAbilityEnded(const FAbilityEndedData& EndedData);
 
 	void HandleDeathStarted();
+	void HandleDeathPresentationFinished();
 
 	bool CanStartBossAttack(
 		EAshenOathBossAttackType AttackType,
@@ -216,6 +219,9 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AshenOath|Combat", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UCombatDeathComponent> DeathComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AshenOath|Feedback", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAshenOathCombatFeedbackComponent> CombatFeedbackComponent;
+
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|Combat|Boss")
 	TObjectPtr<UAshenOathMeleeActionData> SingleSwingAction;
 
@@ -253,6 +259,7 @@ private:
 
 	FDelegateHandle AbilityEndedDelegateHandle;
 	FDelegateHandle DeathStartedHandle;
+	FDelegateHandle DeathPresentationFinishedHandle;
 
 	FSingleSwingEndedEvent SingleSwingEndedEvent;
 	FAshenOathBossAttackEndedEvent BossAttackEndedEvent;

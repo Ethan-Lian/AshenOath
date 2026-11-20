@@ -1,11 +1,16 @@
 #include "Death/CombatDeathComponent.h"
 
 #include "AbilitySystemComponent.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/Character.h"
 
 UCombatDeathComponent::UCombatDeathComponent()
 {
-	PrimaryComponentTick.bCanEverTick = false;
+	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.bStartWithTickEnabled = false;
+	PrimaryComponentTick.TickGroup = TG_PostPhysics;
 }
 
 void UCombatDeathComponent::ConfigureDeathContract(
@@ -62,9 +67,32 @@ bool UCombatDeathComponent::IsDeathStarted() const
 	return bDeathStarted;
 }
 
+void UCombatDeathComponent::TickComponent(
+	const float DeltaTime,
+	const ELevelTick TickType,
+	FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	UAnimInstance* AnimInstance = DeathAnimInstance.Get();
+	const FAnimMontageInstance* MontageInstance = AnimInstance
+		? AnimInstance->GetMontageInstanceForID(DeathMontageInstanceID)
+		: nullptr;
+	if (!MontageInstance || (!MontageInstance->IsPlaying() && !MontageInstance->IsStopped()))
+	{
+		// With auto blend-out disabled the engine stops playback at the last
+		// section's end but keeps the instance weighted, preserving the corpse pose.
+		FinishDeathPresentation();
+	}
+}
+
 void UCombatDeathComponent::EndPlay(
 	const EEndPlayReason::Type EndPlayReason)
 {
+	// Queued animation callbacks must not report presentation during teardown.
+	bDeathPresentationFinished = true;
+	SetComponentTickEnabled(false);
+	UnbindDeathMontage();
 	UAbilitySystemComponent* AbilitySystem = AbilitySystemComponent.Get();
 	const bool bRemoveOwnedTerminalTag = bOwnsTerminalStateTag;
 	bOwnsTerminalStateTag = false;
@@ -78,6 +106,7 @@ void UCombatDeathComponent::EndPlay(
 
 	UnbindHealth();
 	DeathStartedEvent.Clear();
+	DeathPresentationFinishedEvent.Clear();
 	CharacterOwner.Reset();
 
 	Super::EndPlay(EndPlayReason);
@@ -148,8 +177,70 @@ void UCombatDeathComponent::UnbindHealth()
 void UCombatDeathComponent::PlayDeathMontage()
 {
 	ACharacter* Character = CharacterOwner.Get();
-	if (IsValid(Character) && IsValid(DeathMontage))
+	if (!IsValid(Character) || !IsValid(DeathMontage))
 	{
-		Character->PlayAnimMontage(DeathMontage);
+		FinishDeathPresentation();
+		return;
 	}
+
+	const float Duration = Character->PlayAnimMontage(DeathMontage);
+	// Playing a Montage may stop other instances and invoke gameplay callbacks.
+	if (bDeathPresentationFinished || !AbilitySystemComponent.IsValid())
+	{
+		return;
+	}
+
+	UAnimInstance* AnimInstance = Character->GetMesh()->GetAnimInstance();
+	FAnimMontageInstance* MontageInstance = Duration > 0.0f && AnimInstance
+		? AnimInstance->GetActiveInstanceForMontage(DeathMontage)
+		: nullptr;
+	if (!MontageInstance)
+	{
+		FinishDeathPresentation();
+		return;
+	}
+
+	DeathAnimInstance = AnimInstance;
+	DeathMontageInstanceID = MontageInstance->GetInstanceID();
+	MontageInstance->bEnableAutoBlendOut = false;
+	MontageInstance->OnMontageEnded.BindUObject(this, &UCombatDeathComponent::HandleDeathMontageEnded);
+	SetComponentTickEnabled(true);
+}
+
+void UCombatDeathComponent::HandleDeathMontageEnded(UAnimMontage* Montage, bool /*bInterrupted*/)
+{
+	if (Montage == DeathMontage && DeathMontageInstanceID != INDEX_NONE)
+	{
+		DeathAnimInstance.Reset();
+		DeathMontageInstanceID = INDEX_NONE;
+		FinishDeathPresentation();
+	}
+}
+
+void UCombatDeathComponent::FinishDeathPresentation()
+{
+	if (bDeathPresentationFinished)
+	{
+		return;
+	}
+
+	bDeathPresentationFinished = true;
+	SetComponentTickEnabled(false);
+	DeathPresentationFinishedEvent.Broadcast();
+}
+
+void UCombatDeathComponent::UnbindDeathMontage()
+{
+	if (UAnimInstance* AnimInstance = DeathAnimInstance.Get())
+	{
+		if (FAnimMontageInstance* MontageInstance = AnimInstance->GetMontageInstanceForID(DeathMontageInstanceID))
+		{
+			if (MontageInstance->OnMontageEnded.IsBoundToObject(this))
+			{
+				MontageInstance->OnMontageEnded.Unbind();
+			}
+		}
+	}
+	DeathAnimInstance.Reset();
+	DeathMontageInstanceID = INDEX_NONE;
 }

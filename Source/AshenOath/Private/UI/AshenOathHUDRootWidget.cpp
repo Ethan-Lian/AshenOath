@@ -1,4 +1,4 @@
-﻿#include "UI/AshenOathHUDRootWidget.h"
+#include "UI/AshenOathHUDRootWidget.h"
 
 #include "UI/AshenOathBossStatusWidget.h"
 #include "UI/AshenOathPlayerStatusWidget.h"
@@ -61,6 +61,14 @@ void UAshenOathHUDRootWidget::SetMatchOutcome(
 
 	OutcomeText->SetText(OutcomeLabel);
 	OutcomePanel->SetVisibility(ESlateVisibility::Visible);
+}
+
+void UAshenOathHUDRootWidget::SetIntroPlaying(const bool bPlaying)
+{
+	if (PlayerStatus)
+	{
+		PlayerStatus->SetIntroPlaying(bPlaying);
+	}
 }
 
 void UAshenOathHUDRootWidget::HandleRetryClicked()

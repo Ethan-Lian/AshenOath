@@ -24,22 +24,21 @@ bool AAshenOathPlayerController::RequestRetry()
 
 void AAshenOathPlayerController::SetGameplayInputEnabled(const bool bEnabled)
 {
-	if (bGameplayInputEnabled == bEnabled)
+	if (bGameplayInputEnabled != bEnabled)
 	{
-		return;
-	}
+		bGameplayInputEnabled = bEnabled;
+		CurrentMovementIntent = FVector2D::ZeroVector;
+		SetIgnoreMoveInput(!bEnabled);
+		SetIgnoreLookInput(!bEnabled);
 
-	bGameplayInputEnabled = bEnabled;
-	CurrentMovementIntent = FVector2D::ZeroVector;
-	SetIgnoreMoveInput(!bEnabled);
-	SetIgnoreLookInput(!bEnabled);
-
-	if (!bEnabled)
-	{
-		if (AAshenOathPlayerCharacter* PlayerCharacter =
-			Cast<AAshenOathPlayerCharacter>(GetPawn()))
+		if (!bEnabled)
 		{
-			PlayerCharacter->RequestClearLockOn();
+			if (AAshenOathPlayerCharacter* PlayerCharacter =
+				Cast<AAshenOathPlayerCharacter>(GetPawn()))
+			{
+				PlayerCharacter->RequestClearLockOn();
+				PlayerCharacter->RequestComboAttackReleased();
+			}
 		}
 	}
 
@@ -55,6 +54,13 @@ void AAshenOathPlayerController::SetGameplayInputEnabled(const bool bEnabled)
 		SetInputMode(FInputModeGameAndUI());
 		SetShowMouseCursor(true);
 	}
+}
+
+void AAshenOathPlayerController::EnterCinematicInputMode()
+{
+	SetGameplayInputEnabled(false);
+	SetInputMode(FInputModeGameOnly());
+	SetShowMouseCursor(false);
 }
 
 void AAshenOathPlayerController::SetupInputComponent()
@@ -101,6 +107,14 @@ void AAshenOathPlayerController::SetupInputComponent()
 			EnhancedInput->BindAction(
 				ComboAttackAction, ETriggerEvent::Started,
 				this, &AAshenOathPlayerController::HandleComboAttack
+			);
+			EnhancedInput->BindAction(
+				ComboAttackAction, ETriggerEvent::Completed,
+				this, &AAshenOathPlayerController::HandleComboAttackReleased
+			);
+			EnhancedInput->BindAction(
+				ComboAttackAction, ETriggerEvent::Canceled,
+				this, &AAshenOathPlayerController::HandleComboAttackReleased
 			);
 		}
 
@@ -168,6 +182,7 @@ void AAshenOathPlayerController::OnPossess(APawn* InPawn)
 
 void AAshenOathPlayerController::OnUnPossess()
 {
+	HandleComboAttackReleased();
 	CurrentMovementIntent = FVector2D::ZeroVector;
 	RemoveGameplayInputMapping();
 	Super::OnUnPossess();
@@ -175,6 +190,7 @@ void AAshenOathPlayerController::OnUnPossess()
 
 void AAshenOathPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	HandleComboAttackReleased();
 	RemoveGameplayInputMapping();
 	Super::EndPlay(EndPlayReason);
 }
@@ -303,7 +319,15 @@ void AAshenOathPlayerController::HandleComboAttack()
 
 	if (IsValid(PlayerCharacter))
 	{
-		PlayerCharacter->RequestComboAttack();
+		PlayerCharacter->RequestComboAttackPressed();
+	}
+}
+
+void AAshenOathPlayerController::HandleComboAttackReleased()
+{
+	if (AAshenOathPlayerCharacter* PlayerCharacter = Cast<AAshenOathPlayerCharacter>(GetPawn()))
+	{
+		PlayerCharacter->RequestComboAttackReleased();
 	}
 }
 

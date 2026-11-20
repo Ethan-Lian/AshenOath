@@ -95,10 +95,11 @@ void UCombatHitReactionComponent::ResetReaction()
 }
 
 void UCombatHitReactionComponent::HandleDamageResolved(
-	const FCombatDamageAttempt&,
+	const FCombatDamageAttempt& Attempt,
 	const ECombatDamageResult Result)
 {
 	if (Result != ECombatDamageResult::Applied ||
+		!Attempt.bCanTriggerHitReaction ||
 		!IsValid(HitReactionMontage) ||
 		StaggerDuration <= KINDA_SMALL_NUMBER)
 	{

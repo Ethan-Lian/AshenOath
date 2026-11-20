@@ -10,6 +10,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "GameplayEffect.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 UCombatMeleeComponent::UCombatMeleeComponent()
 {
@@ -116,7 +117,6 @@ FCombatMeleeSessionHandle UCombatMeleeComponent::BeginSession(
 	ActiveDamageEffect = Request.DamageEffect;
 	ActiveSetByCallerMagnitudeTag = Request.SetByCallerMagnitudeTag;
 	ActiveSetByCallerMagnitude = Request.SetByCallerMagnitude;
-	bActiveDamageCanTriggerPerfectDodge = Request.bCanTriggerPerfectDodge;
 	ActiveMeleeTraceRadius = Request.TraceRadius;
 	ActiveMeleeTraceBones = Request.TraceBones;
 
@@ -154,7 +154,8 @@ void UCombatMeleeComponent::BeginHitWindowFromAnimation(
 	USkeletalMeshComponent* MeshComponent,
 	UAnimSequenceBase* Animation,
 	const int32 MontageInstanceId,
-	const int32 NotifyInstanceId)
+	const int32 NotifyInstanceId,
+	const bool bCanTriggerHitReaction)
 {
 	if (!IsAnimationSignalOwned(
 			MeshComponent,
@@ -165,7 +166,7 @@ void UCombatMeleeComponent::BeginHitWindowFromAnimation(
 		return;
 	}
 
-	BeginHitWindow(GetActiveSessionHandle(), NotifyInstanceId);
+	BeginHitWindow(GetActiveSessionHandle(), NotifyInstanceId, bCanTriggerHitReaction);
 }
 
 void UCombatMeleeComponent::EndHitWindowFromAnimation(
@@ -206,7 +207,8 @@ void UCombatMeleeComponent::TickHitWindowFromAnimation(
 
 void UCombatMeleeComponent::BeginHitWindow(
 	const FCombatMeleeSessionHandle& SessionHandle,
-	const int32 NotifyInstanceId)
+	const int32 NotifyInstanceId,
+	const bool bCanTriggerHitReaction)
 {
 	if (!IsSessionActive(SessionHandle) ||
 		HasActiveHitWindow() ||
@@ -242,6 +244,7 @@ void UCombatMeleeComponent::BeginHitWindow(
 	}
 
 	ActiveHitWindowNotifyInstanceId = NotifyInstanceId;
+	bHitWindowCanTriggerHitReaction = bCanTriggerHitReaction;
 	HitActorsInCurrentWindow.Reset();
 }
 
@@ -261,6 +264,7 @@ void UCombatMeleeComponent::TickHitWindow(
 	const FCombatMeleeSessionHandle& SessionHandle,
 	const int32 NotifyInstanceId)
 {
+  TRACE_CPUPROFILER_EVENT_SCOPE(AshenOath_MeleeHitWindow);
 	if (!OwnsHitWindow(SessionHandle, NotifyInstanceId))
 	{
 		return;
@@ -360,7 +364,6 @@ void UCombatMeleeComponent::ResetSession()
 	ActiveDamageEffect = nullptr;
 	ActiveSetByCallerMagnitudeTag = FGameplayTag();
 	ActiveSetByCallerMagnitude = 0.0f;
-	bActiveDamageCanTriggerPerfectDodge = false;
 	ActiveMeleeTraceRadius = 0.0f;
 	ActiveMeleeTraceBones.Reset();
 }
@@ -368,6 +371,7 @@ void UCombatMeleeComponent::ResetSession()
 void UCombatMeleeComponent::ResetHitWindow()
 {
 	ActiveHitWindowNotifyInstanceId = INDEX_NONE;
+	bHitWindowCanTriggerHitReaction = false;
 	PreviousMeleeTraceLocations.Reset();
 	HitActorsInCurrentWindow.Reset();
 }
@@ -397,15 +401,19 @@ void UCombatMeleeComponent::SweepMeleeSegment(
 
 	TArray<FHitResult> HitResults;
 
-	World->SweepMultiByObjectType(
-		HitResults,
-		Start,
-		End,
-		FQuat::Identity,
-		ObjectQueryParams,
-		FCollisionShape::MakeSphere(ActiveMeleeTraceRadius),
-		QueryParams
-	);
+	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(AshenOath_MeleeSweepQuery);
+
+		World->SweepMultiByObjectType(
+			HitResults,
+			Start,
+			End,
+			FQuat::Identity,
+			ObjectQueryParams,
+			FCollisionShape::MakeSphere(ActiveMeleeTraceRadius),
+			QueryParams
+		);
+	}
 
 	for (const FHitResult& HitResult : HitResults)
 	{
@@ -456,7 +464,7 @@ void UCombatMeleeComponent::SubmitMeleeHit(
 	DamageAttempt.SourceActor = Character;
 	DamageAttempt.DamageEffect = ActiveDamageEffect;
 	DamageAttempt.HitTimeSeconds = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
-	DamageAttempt.bCanTriggerPerfectDodge = bActiveDamageCanTriggerPerfectDodge;
+	DamageAttempt.bCanTriggerHitReaction = bHitWindowCanTriggerHitReaction;
 	DamageAttempt.SetByCallerMagnitudeTag = ActiveSetByCallerMagnitudeTag;
 	DamageAttempt.SetByCallerMagnitude = ActiveSetByCallerMagnitude;
 

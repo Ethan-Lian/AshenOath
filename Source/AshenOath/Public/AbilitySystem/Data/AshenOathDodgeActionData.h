@@ -39,13 +39,4 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat Action|Window",
 		meta = (ClampMin = "0.01", Units = "s"))
 	float WindowDuration = 0.0f;
-
-	// When enabled, this interval must be a proper subset of the ordinary window.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat Action|Window|Perfect Dodge",
-		meta = (ClampMin = "0.0", Units = "s"))
-	float PerfectDodgeWindowStartTime = 0.0f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat Action|Window|Perfect Dodge",
-		meta = (ClampMin = "0.0", Units = "s"))
-	float PerfectDodgeWindowDuration = 0.0f;
 };

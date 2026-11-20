@@ -14,8 +14,7 @@ enum class ECombatDamageResult : uint8
 	Applied,
 	DodgeInvulnerable,
 	OtherInvulnerable,
-	Invalid,
-	PerfectDodge
+	Invalid
 };
 
 /**
@@ -40,10 +39,9 @@ struct ASHENOATHCOMBAT_API FCombatDamageAttempt
 	UPROPERTY(BlueprintReadWrite, Category = "Combat Damage")
 	double HitTimeSeconds = 0.0;
 
-	// Whether this source allows a dodge-window rejection to count as a
-	// perfect dodge. The target still owns timing and one-shot consumption.
+	// Damage can be applied without interrupting the target or starting stagger.
 	UPROPERTY(BlueprintReadWrite, Category = "Combat Damage")
-	bool bCanTriggerPerfectDodge = false;
+	bool bCanTriggerHitReaction = true;
 
 	// Optional per-execution SetByCaller value, applied only when its tag is valid.
 	// The Effect decides which attribute consumes this value.

@@ -4,6 +4,7 @@ DerivedDataCache/
 Intermediate/
 Saved/
 Build/
+content/
 
 # IDE generated files
 .vs/
@@ -49,7 +50,3 @@ Desktop.ini
 
 .codex/
 docs/AshenOath-plan/
-AGENTS.md
-docs/engineering
-
-

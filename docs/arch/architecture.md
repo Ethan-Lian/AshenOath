@@ -1,102 +1,31 @@
-# AshenOath 架构总览
+# AshenOath 架构
 
-AshenOath 是单人第三人称 Boss 战项目。`AshenOath` 游戏模块组装输入、角色、GAS、胜负和 UI；`AshenOathCombat` 提供不依赖具体玩家/Boss 类型的动作、近战扫掠、目标侧伤害、受击和死亡组件。
+## 模块
 
-## 当前结构
+依赖方向：`AshenOath → AshenOathCombat`。
 
-虚线表示默认类配置，实线表示运行时调用或数据传递；对象所有权见下表。
+| 模块 | 职责 |
+|---|---|
+| `AshenOath` | 组装角色、输入、GAS Ability、ActionData、Boss AI、镜头、对局和 UI |
+| `AshenOathCombat` | 近战检测、防御窗口、目标侧伤害、受击、死亡、目标持有和位移 Task |
 
-```mermaid
-flowchart TD
-    GM[GameMode] -.->|默认 Controller 类| PC[PlayerController]
-    GM -.->|默认 Pawn 类| P[Player Character]
-    EI[Enhanced Input] --> PC
-    PC -->|RequestMove：意图与参考 Yaw| P
-    PC -->|轻击 / 闪避请求| P
-    P -->|AddMovementInput| CM[CharacterMovement]
-    P -->|TryActivateAbility：轻击 / 前后闪避| GAS[玩家 ASC / AttributeSet]
-    GAS --> ATTACK[ComboAttack GameplayAbility]
-    GAS --> DODGE[Dodge GameplayAbility]
-    ATTACK -->|PlayMontageAndWait| AN[Character AnimInstance]
-    ATTACK -->|配置快照与播放实例| MELEE[CombatMelee]
-    AN -->|带 Montage 实例 ID 的 Notify| MELEE
-    DODGE -->|Travel：代码位移 Task| CM
-    DODGE -->|Recovery：锁定目标朝向 Task| P
-    DODGE -->|时间窗口与来源句柄| DEFENSE[CombatDefense]
-    DEFENSE -->|仅自己持有的一层无敌 Tag| GAS
-    GAS -->|成功消耗通知| RECOVERY[StaminaRecovery]
-    MELEE -->|DamageAttempt| DAMAGE[目标 CombatDamage]
-    DAMAGE -->|按命中时刻查询| DEFENSE
-    DAMAGE -->|Effect / 其他无敌查询| GAS
-    DAMAGE -->|Applied 结果| REACTION[CombatHitReaction]
-    GAS -->|Health 归零| DEATH[CombatDeath]
-    DEATH -->|玩家 DeathStarted| P
-    DEATH -->|Boss DeathStarted| B
-    P -->|玩家死亡| GM
-    B -->|Boss 死亡| GM
-    GM -->|唯一胜负结果| HUD[HUD / Outcome Widget]
-    HUD -->|Retry 请求| PC
-    PC -->|ControlRotation| CAM[SpringArm / Camera]
-    CM -->|Velocity / IsFalling| AN
-    P -->|初始化 / 读取状态 Tag| GAS
-    B[Boss Character] -->|初始化| BGAS[Boss ASC / AttributeSet]
-    B -->|显式 StartLogic / StopLogic| ST[StateTree Component]
-    ST -->|决策 / 接近 / 攻击 / 恢复| B
-    B -->|第一阶段选招与待执行决定| BD[Boss Decision Component]
-    BD -->|可用性查询 / 攻击请求| B
-    BGAS --> BATTACK[Boss 近战 GameplayAbilities]
-    BATTACK -->|Montage 与会话| MELEE
-```
+Combat 通过参数接收配置，不引用具体角色、项目 DataAsset、项目 Tag 或 UI。
 
-| 对象 | 持有或管理的内容 | 边界 |
-|---|---|---|
-| GameMode | 默认 Pawn/Controller 类、当前 Boss 和一次性胜负结果 | 首个有效死亡报告决定胜负；只在结算后接受重试并重新加载当前关卡 |
-| PlayerController | InputComponent 绑定、Mapping Context 注册、最近移动意图和重试转发 | 每次输入取当前 Pawn；结算时关闭 Gameplay 输入并切换到 UI，不自行决定胜负 |
-| Player Character | ASC、AttributeSet、镜头和 Combat 组件；使用继承的 CharacterMovement | 验证角色状态、选择玩家动作数据，将相对视角意图转为世界方向；不直接写战斗数值 |
-| Boss Character | ASC、AttributeSet、StateTreeComponent、四类近战 AbilitySpec 与请求身份 | 协调初始化和退出顺序；向 StateTree 提供稳定入口，负责 GAS 攻击请求与取消 |
-| Boss Decision Component | 一次决策的 Snapshot、待执行 Decision、Utility 配置、随机流及近期使用与冷却历史 | 在 StateTree 决策时检查目标与攻击可用性，给合格招式评分并选择接近、攻击或等待；执行前复核目标与距离，再向 Character 请求攻击 |
-| AttributeSet | Health、MaxHealth、Stamina、MaxStamina | 只维护数值范围；Death 组件观察 Health 并拥有终止转换 |
-| Combat GameplayAbility 基类 | 动作互斥、ActionData Cost 检查/应用与成功消耗通知 | 只共享 GAS 事务，不编排具体攻击或闪避 |
-| MeleeAttack GameplayAbility 基类 | 玩家与 Boss 近战共用的 Montage Task、Cost 提交、动画来源身份、Melee 会话和清理 | 不决定具体输入语义、连招规则、蓄力阶段或 Boss 选招；结束、中断、失败统一经 `EndAbility` 释放会话 |
-| ComboAttack GameplayAbility | 轻击连招激活、Combo Window 输入消费及 Montage Section 推进 | 直接作为轻击 Ability 授予；只有所属动画窗口接受的重复输入才能推进下一段 |
-| HeavyAttack GameplayAbility | 按下、蓄力消耗、松开/满蓄释放及伤害倍率 | 与 Combo 并列复用 MeleeAttack 生命周期，不继承连招状态 |
-| BossSingleSwing GameplayAbility | 校验单次挥击配置并启动近战执行 | 复用 MeleeAttack 生命周期，不单独管理 Montage Task 或 Melee 会话 |
-| BossCombo / ChargedSwing / DashSwing GameplayAbility | 分别编排连续挥击、定时蓄力释放、加速追击后挥击 | 共用 MeleeAttack 生命周期；追击进入挥击距离后才建立伤害会话，全部取消路径由 GAS 清理 |
-| Dodge GameplayAbility | 一次闪避的方向/朝向策略快照、Montage、Cost、Travel/Recovery Task 与 Defense 窗口协调 | 前后配置由两个 AbilitySpec 的 SourceObject 区分；玩法状态只在费用成功后建立 |
-| Heal GameplayAbility | 一次原地治疗的 Montage、完成 Notify 与 Effect 提交 | 执行期间持有 `State.MovementLocked`；Notify 前中断不回血、不消耗次数 |
-| CombatMovement AbilityTask | 一次代码位移的时间进度、MovementMode 与 RootMotionMode 接管 | Sweep 受阻自然截断；完成、取消和失败均恢复接管状态 |
-| DodgeFacingRecovery AbilityTask | 在闪避末段按实时目标方位把角色从位移朝向平滑带回锁定朝向 | 位于项目模块，只读取通用 Targeting 提供的目标 Actor；不进入 Combat 模块 |
-| CombatDefense | 普通/完美闪避窗口、来源句柄和自己施加的 loose Tag | 完美窗口必须是普通窗口的真子集且一次闪避最多消费一次；死亡时可整体复位 |
-| StaminaRecovery | 延迟计时器及自己施加的周期恢复 Effect | 跨越多次动作；只有成功消耗重启，死亡和退出停止 |
-| CombatMelee | 伤害配置快照、播放来源身份、武器扫掠、Notify 窗口和窗口内去重 | 不查找当前 Ability；只接受所属 Mesh、AnimInstance、Montage 实例的信号并提交中立伤害尝试 |
-| CombatDamage | 目标侧伤害入口、终止状态拒绝、无敌判定和结果广播 | 区分普通/完美闪避与其他无敌，通过源/目标 ASC 应用伤害 Effect |
-| CombatHitReaction | 监听目标侧 Applied 结果，拥有短硬直 Tag、计时器和基础受击 Montage | 项目模块注入 Tag；终止状态不再启动受击，死亡可同步复位其状态 |
-| CombatDeath | 观察注入的 Health 属性，拥有一次性 Dead Tag、死亡事件和基础 Montage | 先建立终止状态，再广播给宿主清理并播放死亡表现；不引用具体角色或 GameMode |
-| HUD / Outcome Widget | 观察玩家 Health、Stamina、剩余治疗次数和 GameMode 胜负 | UI 不决定治疗是否可用；Retry 按钮只向 Controller 转发请求 |
-| AnimInstance | 本实例的移动表现数据；对 Character/Movement 的弱引用缓存 | 读取实际移动结果，不拥有 Gameplay 动作状态 |
+## 架构图
 
-游戏模块的 `UAshenOathActionData` 保存 Montage、播放速率、可选起始 Section 与通用 Cost；`UAshenOathMeleeActionData` 增加伤害和扫掠配置，`UAshenOathDodgeActionData` 增加位移与防御窗口，`UAshenOathHealActionData` 指定治疗 Effect。玩家连招使用 `UAshenOathComboAttackData`，重击使用 `UAshenOathHeavyAttackData`。Combat 模块不读取这些 DataAsset；Ability 将配置转换为 Combat 组件和 Task 的调用参数。
+| 图 | 预览 | Excalidraw 源文件 |
+| --- | --- | --- |
+| 全局系统架构 | [SVG](diagrams/architecture-overview.svg) | [源文件](diagrams/architecture-overview.excalidraw.md) |
+| GAS 动作生命周期 | [SVG](diagrams/gas-action-lifecycle.svg) | [源文件](diagrams/gas-action-lifecycle.excalidraw.md) |
+| 近战判定与伤害结算 | [SVG](diagrams/melee-hit-and-damage.svg) | [源文件](diagrams/melee-hit-and-damage.excalidraw.md) |
+| 闪避与位移 AbilityTask | [SVG](diagrams/dodge-movement-task.svg) | [源文件](diagrams/dodge-movement-task.excalidraw.md) |
+| Boss AI 决策与执行 | [SVG](diagrams/boss-ai.svg) | [源文件](diagrams/boss-ai.excalidraw.md) |
 
-角色组件由构造函数创建。ASC 和 AttributeSet 随 Character 存续；动画缓存与输入注册记录使用弱引用，不延长所引用对象的生命周期。
+## 系统入口
 
-## 关键运行路径
-
-**移动到动画**：Move Input → Controller 转发意图与参考 Yaw → Character 验证约束并转换方向 → CharacterMovement 执行移动 → AnimInstance 读取实际速度。
-
-**轻击到伤害**：Attack Input → Character 请求已授予的 ComboAttack Ability → MeleeAttack 基类确认 Montage 播放并保存实例身份 → Melee 保存配置与播放实例快照 → GAS 提交一次 Cost → Combo Window 接受重复输入并选择下一 Section，Hit Notify 携带 Montage 实例 ID 开窗/扫掠 → 目标 CombatDamage 经 GAS 应用伤害。任何失败或中断先释放 Melee 会话，再由 Task 停止 Montage。
-
-**闪避到清理**：Dodge Input → Character 选择前/后 AbilitySpec 并冻结世界方向/朝向策略 → Dodge Ability 启动 Montage → 提交一次 Cost → Defense 建立窗口、Movement Task 执行 Sweep 位移 → 锁定状态下的前/侧翻在位移结束后由 FacingRecovery Task 按独立时长平滑回正 → `EndAbility` 释放 Defense，GAS 销毁 Task 并恢复移动/根位移模式。后撤翻滚保持面向目标，不创建 Recovery Task。成功消耗独立通知 StaminaRecovery 重启延迟；拒绝请求不影响已有恢复。详见 [战斗动作与伤害](../systems/combat-actions.md)。
-
-**治疗到 UI**：Heal Input → Character 请求 Heal Ability → GAS 持有移动锁并播放 Cast Montage → 所属完成 Notify 触发一次 Instant Heal Effect → Character 扣除一次治疗次数并广播变化 → HUD 观察生命与次数。Notify 前中断不会提交 Effect 或次数；Ability 结束时释放移动锁。
-
-**伤害到受击/死亡**：CombatDamage 先拒绝终止目标和无敌命中；合格攻击在完美窗口内被拒绝时返回一次 `PerfectDodge`。成功伤害广播 `Applied`，HitReaction 取消可中断动作并短暂硬直；Health 归零时 CombatDeath 先添加 Dead Tag，再通知宿主停止动作、窗口、恢复、AI 与移动，最后向 GameMode 报告胜负。
-
-**结算到重试**：玩家或 Boss 的首个死亡报告提交唯一 Defeat/Victory → HUD 显示结算并关闭 Gameplay 输入 → Retry 按钮经 PlayerController 请求 GameMode → GameMode 重新加载当前关卡。
-
-**Boss 第一阶段循环**：StateTree 请求 Boss 决策；Decision Component 拍下目标距离、朝向、可用攻击及近期历史的 Snapshot。近战招式只在近战范围内候选，DashSwing 只在起冲距离和停止距离外候选；冷却中的招式被排除。组件对候选计算基础分减去距离、朝向和近期使用惩罚，按分数排序，同分由可复现的随机流打破；没有可用招式时选择接近或等待。StateTree 消费待执行 Decision；攻击前组件复核目标与距离，经 Character 依排名请求 GAS 激活，仅在请求被拒绝时尝试下一个候选；成功受理后才更新历史与冷却。DashSwing 的 Ability Task 临时提高移速并逐帧朝玩家当前位置移动，进入挥击距离后切换动画并建立 Melee 会话 → 攻击 Task 按本次请求句柄等待结果 → Recovery Task 保留无伤害间隔。树退出时 Task 先解除监听，再按句柄取消自己持有的攻击。当前只覆盖第一阶段四招，阶段状态尚未接入。
-
-**初始化到退出**：玩家随占有刷新 GAS 上下文；Boss 在进入游戏时初始化 GAS，再调用 StateTree 启动。Boss 退出先停树，再清理 GAS 上下文，使树的退出逻辑仍可使用 GAS。
-
-## 详细运行时架构图
-
-![Combat ability runtime architecture](AbilitySystem.drawio.svg)
+| 关注点 | 文档 |
+|---|---|
+| ActorInfo 何时有效，初始属性怎样应用，耐力何时恢复 | [GAS 与属性](../systems/ability-system.md) |
+| 动作怎样提交费用，Montage 实例怎样隔离旧 Notify，伤害怎样结算 | [战斗动作与伤害](../systems/combat-actions.md) |
+| StateTree 与 Utility 怎样选招，Pressure 怎样控制连续进攻，请求怎样取消 | [Boss AI](../systems/boss-ai.md) |
+| 演出何时开放战斗，死亡何时显示结算，重试怎样重建 | [对局流程](../systems/match-flow.md) |

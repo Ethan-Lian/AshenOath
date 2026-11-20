@@ -2,9 +2,11 @@
 
 #include "CoreMinimal.h"
 #include "AbilitySystem/Ability/AshenOathMeleeAttackAbility.h"
+#include "Feedback/AshenOathChargeState.h"
 #include "AshenOathHeavyAttackAbility.generated.h"
 
 class UAshenOathHeavyAttackData;
+class UAshenOathCombatFeedbackComponent;
 
 enum class EAshenOathHeavyAttackPhase : uint8
 {
@@ -22,11 +24,14 @@ class ASHENOATH_API UAshenOathHeavyAttackAbility : public UAshenOathMeleeAttackA
 public:
 	UAshenOathHeavyAttackAbility();
 
-	// Releases the only heavy action: a stationary charged staff thrust.
+	// Releases the stationary staff thrust after at least one second of charging;
+	// an earlier release cancels the charge and returns false.
 	bool HandleInputReleased();
 
 	// Dodge may preempt only the undecided/charging portion of this gesture.
 	bool CancelChargeForDodge();
+	FAshenOathChargeState GetChargeState() const;
+	void RequestReleaseFeedbackFromAnimation(USkeletalMeshComponent* Mesh, UAnimSequenceBase* Animation, int32 MontageInstanceId);
 
 protected:
 	virtual bool CanActivateAbility(
@@ -62,6 +67,8 @@ private:
 	bool StartChargedRelease();
 	bool ConsumeChargeThroughCurrentTime();
 	float CalculateChargedDamageMagnitude() const;
+	float GetChargeAlpha() const;
+	void PublishChargeState();
 	void AlignChargedReleaseToActiveBoss();
 	void AcquireMovementLock();
 	void ReleaseMovementLock();
@@ -73,6 +80,10 @@ private:
 
 	FTimerHandle ChargeDrainTimer;
 	FTimerHandle MaximumChargeTimer;
+	FTimerHandle ChargeReadyTimer;
+	TWeakObjectPtr<UAshenOathCombatFeedbackComponent> ChargeFeedbackComponent;
+	uint32 ChargeFeedbackId = 0;
+	bool bReleaseFeedbackPlayed = false;
 	EAshenOathHeavyAttackPhase ActivePhase = EAshenOathHeavyAttackPhase::None;
 	double ChargeStartedAtSeconds = 0.0;
 	float AccumulatedChargeStaminaCost = 0.0f;

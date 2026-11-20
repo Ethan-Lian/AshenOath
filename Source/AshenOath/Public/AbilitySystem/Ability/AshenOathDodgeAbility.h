@@ -11,6 +11,10 @@ class UAshenOathAbilityTask_RecoverFacing;
 class UAshenOathDodgeActionData;
 class UAnimMontage;
 class UCombatDefenseComponent;
+class UAshenOathCombatFeedbackComponent;
+class USkeletalMeshComponent;
+class UAnimSequenceBase;
+class USoundBase;
 
 enum class EAshenOathDodgeFacingMode : uint8
 {
@@ -28,18 +32,14 @@ class ASHENOATH_API UAshenOathDodgeAbility : public UAshenOathCombatAbility
 
 public:
 	UAshenOathDodgeAbility();
+	void RequestVocalFromAnimation(
+		USkeletalMeshComponent* MeshComponent, UAnimSequenceBase* Animation, int32 MontageInstanceId, USoundBase* Sound);
 
 	/** Returns true when GAS accepts activation with this frozen direction and facing policy. */
 	bool TryActivateWithMovementDirection(
 		const FVector& WorldDirection,
 		EAshenOathDodgeFacingMode FacingMode
 	);
-
-#if WITH_DEV_AUTOMATION_TESTS
-	// Simple automation tests advance a transient UWorld multiple times inside
-	// one engine frame, so its GameplayTasks tick function runs only once.
-	void TickTasksForTesting(float DeltaTime);
-#endif
 
 protected:
 	virtual bool CanActivateAbility(
@@ -132,6 +132,10 @@ private:
 	TObjectPtr<UAshenOathAbilityTask_RecoverFacing> FacingRecoveryTask;
 
 	TWeakObjectPtr<UCombatDefenseComponent> ActiveDefenseComponent;
+	TWeakObjectPtr<UAshenOathCombatFeedbackComponent> ActiveFeedbackComponent;
+	TWeakObjectPtr<UAnimMontage> ActiveVocalMontage;
+	int32 ActiveVocalMontageInstanceId = INDEX_NONE;
+	uint32 ActiveVocalActionId = 0;
 
 	FCombatDefenseWindowHandle ActiveDefenseWindow;
 

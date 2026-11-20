@@ -1,5 +1,6 @@
 #include "AbilitySystem/Ability/AshenOathComboAttackAbility.h"
 #include "AbilitySystem/Data/AshenOathComboAttackData.h"
+#include "AbilitySystem/Tasks/AshenOathAbilityTask_ComboTargetAssist.h"
 
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -14,6 +15,22 @@ UAshenOathComboAttackAbility::UAshenOathComboAttackAbility()
 	SetAssetTags(AssetTags);
 
 	ActivationOwnedTags.AddTag(AshenOathGameplayTags::State_MovementLocked);
+}
+
+bool UAshenOathComboAttackAbility::HandleInputPressed()
+{
+	if (!IsActive())
+	{
+		return false;
+	}
+	bComboInputHeld = true;
+	TryQueueComboInput();
+	return true;
+}
+
+void UAshenOathComboAttackAbility::HandleInputReleased()
+{
+	bComboInputHeld = false;
 }
 
 bool UAshenOathComboAttackAbility::TryQueueComboInput()
@@ -89,6 +106,10 @@ void UAshenOathComboAttackAbility::BeginComboWindowFromAnimation(
 	ActiveComboWindowNotifyInstanceId = NotifyInstanceId;
 	bComboWindowOpen = true;
 	bComboInputConsumedInWindow = false;
+	if (bComboInputHeld)
+	{
+		TryQueueComboInput();
+	}
 }
 
 void UAshenOathComboAttackAbility::EndComboWindowFromAnimation(
@@ -222,23 +243,32 @@ bool UAshenOathComboAttackAbility::StartComboExecution(
 	}
 
 	// Continuation is opt-in. Asset links cannot advance the chain unless a
-	// matching Combo Window consumes a repeated combo-attack input.
+	// matching Combo Window consumes a press or the held combo-attack input.
 	for (const FName SectionName : ActiveComboSections)
 	{
 		AnimInstance->Montage_SetNextSection(SectionName, NAME_None, Montage);
 	}
 
-	return BeginMeleeExecution(
+	if (!BeginMeleeExecution(
 		Handle,
 		ActorInfo,
 		ActivationInfo,
 		ActionData,
 		EMeleeCostCommit::CommitConfigured
-	);
+	))
+	{
+		return false;
+	}
+
+	UAshenOathAbilityTask_ComboTargetAssist* TargetAssist =
+		UAshenOathAbilityTask_ComboTargetAssist::AssistComboTarget(this, ActionData, GetActiveAttackMontageInstanceId());
+	TargetAssist->ReadyForActivation();
+	return IsActive();
 }
 
 void UAshenOathComboAttackAbility::ResetComboState()
 {
+	bComboInputHeld = false;
 	ActiveComboSections.Reset();
 	ActiveComboWindowNotifyInstanceId = INDEX_NONE;
 	bComboWindowOpen = false;

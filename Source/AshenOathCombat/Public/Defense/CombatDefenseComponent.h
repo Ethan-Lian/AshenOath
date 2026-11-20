@@ -32,9 +32,7 @@ public:
 	bool CanBeginDodgeWindow(
 		const FGameplayTagContainer& WindowTags,
 		float StartOffsetSeconds,
-		float DurationSeconds,
-		float PerfectDodgeStartOffsetSeconds = 0.0f,
-		float PerfectDodgeDurationSeconds = 0.0f
+		float DurationSeconds
 	) const;
 
 	// Reserves a window without applying tags. Store the returned handle before
@@ -45,9 +43,7 @@ public:
 		const FGameplayTagContainer& WindowTags,
 		float StartOffsetSeconds,
 		float DurationSeconds,
-		double ExecutionStartWorldTime,
-		float PerfectDodgeStartOffsetSeconds = 0.0f,
-		float PerfectDodgeDurationSeconds = 0.0f
+		double ExecutionStartWorldTime
 	);
 
 	bool ActivateDodgeWindow(FCombatDefenseWindowHandle Handle);
@@ -59,8 +55,6 @@ public:
 	bool OwnsWindow(FCombatDefenseWindowHandle Handle) const;
 
 	bool IsDodgeWindowActiveAt(const FGameplayTag& Tag, double WorldTimeSeconds) const;
-
-	bool TryConsumePerfectDodge(const FGameplayTag& Tag, double WorldTimeSeconds);
 
 	bool IsWindowTagApplied(const FGameplayTag& Tag) const;
 
@@ -86,10 +80,6 @@ private:
 
 	double WindowStartWorldTime = 0.0;
 	double WindowEndWorldTime = 0.0;
-	double PerfectDodgeWindowStartWorldTime = 0.0;
-	double PerfectDodgeWindowEndWorldTime = 0.0;
-
-	bool bPerfectDodgeConsumed = false;
 
 	int32 NextWindowId = 1;
 };

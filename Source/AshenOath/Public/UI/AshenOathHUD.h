@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/HUD.h"
@@ -28,9 +28,11 @@ protected:
 
 private:
 	void HandleActiveBossChanged(AAshenOathBossCharacter* BossCharacter);
+	void HandleCombatStarted();
+	void HandleIntroPlaybackChanged(bool bPlaying);
 
 	void HandleActivePlayer(APawn* NewPawn);
-	void HandleMatchOutcomeChanged(EAshenOathMatchOutcome Outcome);
+	void HandleMatchPresentationReady(EAshenOathMatchOutcome Outcome);
 
 	UPROPERTY(EditDefaultsOnly, Category = "AshenOath|UI")
 	TSubclassOf<UAshenOathHUDRootWidget> RootWidgetClass;
@@ -45,7 +47,9 @@ private:
 	TWeakObjectPtr<APlayerController> BoundPlayerController;
 
 	FDelegateHandle ActiveBossChangedHandle;
-	FDelegateHandle MatchOutcomeChangedHandle;
+	FDelegateHandle MatchPresentationReadyHandle;
+	FDelegateHandle CombatStartedHandle;
+	FDelegateHandle IntroPlaybackChangedHandle;
 
 	FDelegateHandle ActivePlayerHandle;
 };

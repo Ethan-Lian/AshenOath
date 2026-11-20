@@ -109,9 +109,7 @@ bool UCombatDamageComponent::TryResolveInvulnerability(
 			? 1
 			: 0;
 
-	// Independent invulnerability takes priority over the dodge window so a
-	// later perfect-dodge reward cannot be granted while another source is
-	// already protecting the target.
+	// Distinguish independently owned invulnerability from this dodge window.
 	if (TargetAbilitySystemComponent.GetTagCount(InvulnerabilityTag) > DefenseOwnedTagCount)
 	{
 		OutResult = ECombatDamageResult::OtherInvulnerable;
@@ -121,13 +119,6 @@ bool UCombatDamageComponent::TryResolveInvulnerability(
 	if (!bDodgeWindowOwnHitTime)
 	{
 		return false;
-	}
-
-	if (Attempt.bCanTriggerPerfectDodge &&
-		DefenseComponent->TryConsumePerfectDodge(InvulnerabilityTag, Attempt.HitTimeSeconds))
-	{
-		OutResult = ECombatDamageResult::PerfectDodge;
-		return true;
 	}
 
 	OutResult = ECombatDamageResult::DodgeInvulnerable;

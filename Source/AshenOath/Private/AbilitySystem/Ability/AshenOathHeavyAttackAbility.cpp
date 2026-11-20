@@ -8,6 +8,8 @@
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Characters/AshenOathBossCharacter.h"
+#include "Characters/AshenOathPlayerCharacter.h"
+#include "Feedback/AshenOathCombatFeedbackComponent.h"
 #include "CollisionQueryParams.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
@@ -15,6 +17,11 @@
 #include "GameplayEffect.h"
 #include "GameplayTags/AshenOathGameplayTags.h"
 #include "TimerManager.h"
+
+namespace
+{
+	constexpr double MinimumChargeDurationSeconds = 1.0;
+}
 
 UAshenOathHeavyAttackAbility::UAshenOathHeavyAttackAbility()
 {
@@ -32,6 +39,30 @@ bool UAshenOathHeavyAttackAbility::HandleInputReleased()
 		return false;
 	}
 	return StartChargedRelease();
+}
+
+FAshenOathChargeState UAshenOathHeavyAttackAbility::GetChargeState() const
+{
+	FAshenOathChargeState State;
+	if (IsActive() && ActivePhase == EAshenOathHeavyAttackPhase::Charging)
+	{
+		State.bCharging = true;
+		State.bCanRelease = GetWorld()->GetTimeSeconds() - ChargeStartedAtSeconds >= MinimumChargeDurationSeconds;
+		State.ChargeAlpha = GetChargeAlpha();
+	}
+	return State;
+}
+
+void UAshenOathHeavyAttackAbility::PublishChargeState()
+{
+	if (UAshenOathCombatFeedbackComponent* Feedback = ChargeFeedbackComponent.Get())
+	{
+		Feedback->UpdateChargeFeedback(ChargeFeedbackId, GetChargeState());
+	}
+	if (AAshenOathPlayerCharacter* Player = Cast<AAshenOathPlayerCharacter>(GetAvatarActorFromActorInfo()))
+	{
+		Player->HeavyChargeChangedEvent.Broadcast();
+	}
 }
 
 bool UAshenOathHeavyAttackAbility::CancelChargeForDodge()
@@ -102,6 +133,7 @@ bool UAshenOathHeavyAttackAbility::StartCharging(
 	ActivePhase = EAshenOathHeavyAttackPhase::Charging;
 	ChargeStartedAtSeconds = World->GetTimeSeconds();
 	AccumulatedChargeStaminaCost = 0.0f;
+	bReleaseFeedbackPlayed = false;
 	AcquireMovementLock();
 	if (!IsActive())
 	{
@@ -148,6 +180,16 @@ bool UAshenOathHeavyAttackAbility::StartCharging(
 		HeavyData->MaxChargeDurationSeconds,
 		false
 	);
+	World->GetTimerManager().SetTimer(
+		ChargeReadyTimer, this, &UAshenOathHeavyAttackAbility::PublishChargeState,
+		MinimumChargeDurationSeconds, false);
+	if (UAshenOathCombatFeedbackComponent* Feedback =
+		GetAvatarActorFromActorInfo()->FindComponentByClass<UAshenOathCombatFeedbackComponent>())
+	{
+		ChargeFeedbackComponent = Feedback;
+		ChargeFeedbackId = Feedback->BeginChargeFeedback(HeavyData);
+	}
+	PublishChargeState();
 	return IsActive();
 }
 
@@ -162,8 +204,17 @@ void UAshenOathHeavyAttackAbility::EndAbility(
 	{
 		World->GetTimerManager().ClearTimer(ChargeDrainTimer);
 		World->GetTimerManager().ClearTimer(MaximumChargeTimer);
+		World->GetTimerManager().ClearTimer(ChargeReadyTimer);
 	}
 
+	UAshenOathCombatFeedbackComponent* Feedback = ChargeFeedbackComponent.Get();
+	const uint32 FeedbackToEnd = ChargeFeedbackId;
+	ChargeFeedbackId = 0;
+	ChargeFeedbackComponent.Reset();
+	if (Feedback)
+	{
+		Feedback->EndChargeFeedback(FeedbackToEnd, bWasCancelled);
+	}
 	ReleaseMovementLock();
 	ActiveHeavyData.Reset();
 	ActivePhase = EAshenOathHeavyAttackPhase::None;
@@ -177,6 +228,7 @@ void UAshenOathHeavyAttackAbility::EndAbility(
 		bReplicateEndAbility,
 		bWasCancelled
 	);
+	PublishChargeState();
 }
 
 bool UAshenOathHeavyAttackAbility::IsHeavyDataReady(
@@ -187,7 +239,7 @@ bool UAshenOathHeavyAttackAbility::IsHeavyDataReady(
 		: nullptr;
 
 	if (!HeavyData ||
-		HeavyData->MaxChargeDurationSeconds <= KINDA_SMALL_NUMBER ||
+		HeavyData->MaxChargeDurationSeconds < MinimumChargeDurationSeconds ||
 		HeavyData->MaxChargeStaminaCost <= KINDA_SMALL_NUMBER ||
 		HeavyData->ChargeDrainIntervalSeconds <= KINDA_SMALL_NUMBER ||
 		!ChargeCostEffect ||
@@ -240,8 +292,17 @@ bool UAshenOathHeavyAttackAbility::StartChargedRelease()
 		return false;
 	}
 
+	// Input release and automatic release share the same minimum hold time.
+	// Elapsed charge cost is retained when an early release cancels the action.
+	if (World->GetTimeSeconds() - ChargeStartedAtSeconds < MinimumChargeDurationSeconds)
+	{
+		FinishAbility(true);
+		return false;
+	}
+
 	World->GetTimerManager().ClearTimer(ChargeDrainTimer);
 	World->GetTimerManager().ClearTimer(MaximumChargeTimer);
+	World->GetTimerManager().ClearTimer(ChargeReadyTimer);
 
 	const float DamageMagnitude = CalculateChargedDamageMagnitude();
 
@@ -269,8 +330,27 @@ bool UAshenOathHeavyAttackAbility::StartChargedRelease()
 		HeavyData->ChargedReleaseSection,
 		Montage
 	);
+	if (IsActive() && ActivePhase == EAshenOathHeavyAttackPhase::ChargedRelease)
+	{
+		PublishChargeState();
+	}
 
 	return true;
+}
+
+void UAshenOathHeavyAttackAbility::RequestReleaseFeedbackFromAnimation(
+	USkeletalMeshComponent* Mesh, UAnimSequenceBase* Animation, const int32 MontageInstanceId)
+{
+	if (ActivePhase != EAshenOathHeavyAttackPhase::ChargedRelease || bReleaseFeedbackPlayed ||
+		!IsAttackSignalOwned(Mesh, Animation, MontageInstanceId))
+	{
+		return;
+	}
+	bReleaseFeedbackPlayed = true;
+	if (UAshenOathCombatFeedbackComponent* Feedback = ChargeFeedbackComponent.Get())
+	{
+		Feedback->ReleaseChargeFeedback(ChargeFeedbackId, GetChargeAlpha());
+	}
 }
 
 bool UAshenOathHeavyAttackAbility::ConsumeChargeThroughCurrentTime()
@@ -371,7 +451,7 @@ bool UAshenOathHeavyAttackAbility::ConsumeChargeThroughCurrentTime()
 		StaminaAfter > KINDA_SMALL_NUMBER;
 }
 
-float UAshenOathHeavyAttackAbility::CalculateChargedDamageMagnitude() const
+float UAshenOathHeavyAttackAbility::GetChargeAlpha() const
 {
 	const UAshenOathHeavyAttackData* HeavyData = ActiveHeavyData.Get();
 	if (!HeavyData || HeavyData->MaxChargeStaminaCost <= KINDA_SMALL_NUMBER)
@@ -379,15 +459,24 @@ float UAshenOathHeavyAttackAbility::CalculateChargedDamageMagnitude() const
 		return 0.0f;
 	}
 
-	const float ChargeAlpha = FMath::Clamp(
+	return FMath::Clamp(
 		AccumulatedChargeStaminaCost / HeavyData->MaxChargeStaminaCost,
 		0.0f,
 		1.0f
 	);
+}
+
+float UAshenOathHeavyAttackAbility::CalculateChargedDamageMagnitude() const
+{
+	const UAshenOathHeavyAttackData* HeavyData = ActiveHeavyData.Get();
+	if (!HeavyData)
+	{
+		return 0.0f;
+	}
 	const float DamageMultiplier = FMath::Lerp(
 		1.0f,
 		HeavyData->FullyChargedDamageMultiplier,
-		ChargeAlpha
+		GetChargeAlpha()
 	);
 
 	// The configured Effect uses an additive Health modifier, so damage is negative.
@@ -516,6 +605,10 @@ void UAshenOathHeavyAttackAbility::HandleChargeDrainTick()
 	if (!ConsumeChargeThroughCurrentTime())
 	{
 		StartChargedRelease();
+	}
+	else
+	{
+		PublishChargeState();
 	}
 }
 

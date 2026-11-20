@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
@@ -27,6 +27,7 @@ public:
 
 	void SetActivePlayer(AAshenOathPlayerCharacter* Player);
 	void SetMatchOutcome(EAshenOathMatchOutcome Outcome);
+	void SetIntroPlaying(bool bPlaying);
 
 protected:
 	virtual void NativeConstruct() override;

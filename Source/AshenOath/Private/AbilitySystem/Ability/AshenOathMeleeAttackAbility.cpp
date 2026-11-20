@@ -7,6 +7,7 @@
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Feedback/AshenOathCombatFeedbackComponent.h"
 
 bool UAshenOathMeleeAttackAbility::CanActivateAbility(
 	const FGameplayAbilitySpecHandle Handle,
@@ -112,7 +113,26 @@ bool UAshenOathMeleeAttackAbility::StartAttackMontage(
 	ActiveSourceAnimInstance = AnimInstance;
 	ActiveSourceMontage = ActionData->Montage;
 	ActiveMontageInstanceId = MontageInstance->GetInstanceID();
+	if (UAshenOathCombatFeedbackComponent* Feedback =
+		MeshComponent->GetOwner()->FindComponentByClass<UAshenOathCombatFeedbackComponent>())
+	{
+		ActiveFeedbackComponent = Feedback;
+		ActiveVocalActionId = Feedback->BeginVocalAction();
+	}
 	return true;
+}
+
+void UAshenOathMeleeAttackAbility::RequestVocalFromAnimation(
+	USkeletalMeshComponent* MeshComponent, UAnimSequenceBase* Animation,
+	const int32 MontageInstanceId, const EAshenOathVocalType Type, USoundBase* Sound)
+{
+	if (IsAttackSignalOwned(MeshComponent, Animation, MontageInstanceId))
+	{
+		if (UAshenOathCombatFeedbackComponent* Feedback = ActiveFeedbackComponent.Get())
+		{
+			Feedback->RequestActionVocal(ActiveVocalActionId, Type, Sound);
+		}
+	}
 }
 
 bool UAshenOathMeleeAttackAbility::BeginMeleeExecution(
@@ -143,7 +163,6 @@ bool UAshenOathMeleeAttackAbility::BeginMeleeExecution(
 
 	FCombatMeleeSessionRequest SessionRequest;
 	SessionRequest.DamageEffect = ActionData->DamageEffect;
-	SessionRequest.bCanTriggerPerfectDodge = ActionData->bCanTriggerPerfectDodge;
 	SessionRequest.TraceRadius = ActionData->MeleeTraceRadius;
 	SessionRequest.TraceBones = ActionData->MeleeTraceBones;
 	SessionRequest.SourceMesh = MeshComponent;
@@ -193,12 +212,20 @@ void UAshenOathMeleeAttackAbility::EndAbility(
 {
 	UCombatMeleeComponent* Melee = ActiveMeleeComponent.Get();
 	const FCombatMeleeSessionHandle SessionToEnd = ActiveMeleeSession;
+	UAshenOathCombatFeedbackComponent* Feedback = ActiveFeedbackComponent.Get();
+	const uint32 VocalActionToEnd = ActiveVocalActionId;
 
+	ActiveFeedbackComponent.Reset();
+	ActiveVocalActionId = 0;
 	ActiveMeleeSession.Reset();
 	ActiveMeleeComponent.Reset();
 	MontageTask = nullptr;
 	ResetMeleeExecutionState();
 	ResetCostApplicationResult();
+	if (Feedback)
+	{
+		Feedback->EndVocalAction(VocalActionToEnd, bWasCancelled);
+	}
 
 	if (Melee)
 	{

@@ -12,7 +12,6 @@ class USkeletalMeshComponent;
 struct ASHENOATHCOMBAT_API FCombatMeleeSessionRequest
 {
 	TSubclassOf<UGameplayEffect> DamageEffect;
-	bool bCanTriggerPerfectDodge = false;
 	float TraceRadius = 0.0f;
 	TArray<FName> TraceBones;
 	USkeletalMeshComponent* SourceMesh = nullptr;

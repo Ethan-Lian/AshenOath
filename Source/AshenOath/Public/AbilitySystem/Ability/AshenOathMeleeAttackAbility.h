@@ -10,8 +10,11 @@ class UAnimInstance;
 class UAnimMontage;
 class UAnimSequenceBase;
 class UAshenOathMeleeActionData;
+class UAshenOathCombatFeedbackComponent;
 class UCombatMeleeComponent;
 class USkeletalMeshComponent;
+class USoundBase;
+enum class EAshenOathVocalType : uint8;
 
 /**
  * Shared execution lifecycle for Montage-driven melee abilities.
@@ -23,6 +26,15 @@ UCLASS(Abstract)
 class ASHENOATH_API UAshenOathMeleeAttackAbility : public UAshenOathCombatAbility
 {
 	GENERATED_BODY()
+
+public:
+	void RequestVocalFromAnimation(
+		USkeletalMeshComponent* MeshComponent,
+		UAnimSequenceBase* Animation,
+		int32 MontageInstanceId,
+		EAshenOathVocalType Type,
+		USoundBase* Sound
+	);
 
 protected:
 	enum class EMeleeCostCommit : uint8
@@ -105,4 +117,6 @@ private:
 	TWeakObjectPtr<UAnimInstance> ActiveSourceAnimInstance;
 	TWeakObjectPtr<UAnimMontage> ActiveSourceMontage;
 	int32 ActiveMontageInstanceId = INDEX_NONE;
+	TWeakObjectPtr<UAshenOathCombatFeedbackComponent> ActiveFeedbackComponent;
+	uint32 ActiveVocalActionId = 0;
 };
